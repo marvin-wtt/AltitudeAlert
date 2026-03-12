@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Altitude Alert</string>
+
+    <string name="notification_channel_name">Altitude Monitor</string>
+    <string name="notification_channel_description">Live altitude and alert status while monitoring is active</string>
+    <string name="notification_starting_title">Altitude Monitor</string>
+    <string name="notification_starting_body">Acquiring altitude…</string>
+</resources>
