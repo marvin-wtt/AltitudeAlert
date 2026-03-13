@@ -1,4 +1,4 @@
-package one.ballooning.altitudealert.ui
+package one.ballooning.altitudealert
 
 import android.Manifest
 import android.content.Intent
@@ -10,7 +10,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.checkSelfPermission
 import androidx.core.content.PermissionChecker.PERMISSION_GRANTED
 import androidx.lifecycle.Lifecycle
@@ -19,8 +18,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import one.ballooning.altitudealert.AltitudeAlertApplication
 import one.ballooning.altitudealert.service.MonitorService
+import one.ballooning.altitudealert.ui.AltitudeAlertApp
+import one.ballooning.altitudealert.ui.MainViewModel
 import one.ballooning.altitudealert.ui.theme.AltitudeAlertTheme
 
 class MainActivity : ComponentActivity() {
@@ -43,13 +43,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         viewModel.refreshSystemInfo()
 
+        // Bind when permissions are in place so the binder provides live altitude.
+        // Foreground state (notification) is managed inside the service via setAlertsEnabled().
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.uiState
                     .map { it.canMonitor }
                     .distinctUntilChanged()
                     .collect { canMonitor ->
-                        if (canMonitor) startAndBindService() else unbindAndStopService()
+                        if (canMonitor) bindMonitorService() else unbindMonitorService()
                     }
             }
         }
@@ -68,39 +70,32 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.refreshSystemInfo()
-        if (viewModel.uiState.value.canMonitor && !serviceBound) {
-            bindService(
-                Intent(this, MonitorService::class.java),
-                viewModel.serviceConnection,
-                BIND_AUTO_CREATE,
-            ).also { serviceBound = it }
-        }
+        if (viewModel.uiState.value.canMonitor && !serviceBound) bindMonitorService()
     }
 
     override fun onStop() {
         super.onStop()
-        if (serviceBound) {
-            unbindService(viewModel.serviceConnection)
-            serviceBound = false
-        }
+        if (serviceBound) unbindMonitorService()
     }
 
-    private fun startAndBindService() {
-        val intent = Intent(this, MonitorService::class.java)
-        ContextCompat.startForegroundService(this, intent)
-        if (!serviceBound) {
-            bindService(intent, viewModel.serviceConnection, BIND_AUTO_CREATE)
-                .also { serviceBound = it }
-        }
+    // ─── Service binding ──────────────────────────────────────────────────────
+
+    private fun bindMonitorService() {
+        if (serviceBound) return
+        serviceBound = bindService(
+            Intent(this, MonitorService::class.java),
+            viewModel.serviceConnection,
+            BIND_AUTO_CREATE,
+        )
     }
 
-    private fun unbindAndStopService() {
-        if (serviceBound) {
-            unbindService(viewModel.serviceConnection)
-            serviceBound = false
-        }
-        stopService(Intent(this, MonitorService::class.java))
+    private fun unbindMonitorService() {
+        if (!serviceBound) return
+        unbindService(viewModel.serviceConnection)
+        serviceBound = false
     }
+
+    // ─── Permissions ──────────────────────────────────────────────────────────
 
     private fun requestRequiredPermissions() {
         val needed = listOf(

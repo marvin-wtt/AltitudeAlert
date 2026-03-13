@@ -2,6 +2,7 @@ package one.ballooning.altitudealert.service
 
 import android.media.AudioManager
 import android.media.ToneGenerator
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -31,6 +32,7 @@ class AlarmSoundPlayer(private val scope: CoroutineScope) {
     }
 
     fun startCrossing() {
+        Log.d("AlarmSoundPlayer", "startCrossing")
         if (crossingJob?.isActive == true) return
         crossingJob = scope.launch {
             while (isActive) {

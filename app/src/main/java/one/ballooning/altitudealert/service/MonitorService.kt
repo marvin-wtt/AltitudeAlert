@@ -39,6 +39,15 @@ class MonitorService : Service() {
         val crossingMutedFlow: StateFlow<Boolean> get() = _crossingMuted.asStateFlow()
         fun setAlertsEnabled(enabled: Boolean) {
             _alertsEnabled.value = enabled
+            if (enabled) {
+                startForeground(
+                    MonitorNotification.NOTIFICATION_ID_LIVE, notification.buildInitial()
+                )
+            } else {
+                resetCrossingAlarm()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
 
         fun muteAlarm() {
@@ -65,10 +74,8 @@ class MonitorService : Service() {
     private var silencedUntilMs: Long? = null
 
     private val vibrator: Vibrator by lazy {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-            getSystemService<VibratorManager>()!!.defaultVibrator
-        else
-            @Suppress("DEPRECATION") getSystemService<Vibrator>()!!
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) getSystemService<VibratorManager>()!!.defaultVibrator
+        else @Suppress("DEPRECATION") getSystemService<Vibrator>()!!
     }
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────
@@ -92,19 +99,16 @@ class MonitorService : Service() {
             .combine(app.configRepository.configFlow) { state, config -> state to config }
 
         scope.launch {
-            combined
-                .catch { e -> Log.e(TAG, "Flow error", e) }
-                .collect { (state, config) ->
-                    _stateFlow.value = state
-                    handleBandAlerts(state, config)
-                    handleMaxAltitudeAlert(state, config)
-                }
+            combined.catch { e -> Log.e(TAG, "Flow error", e) }.collect { (state, config) ->
+                _stateFlow.value = state
+                handleBandAlerts(state, config)
+                handleMaxAltitudeAlert(state, config)
+            }
             Log.w(TAG, "Collection ended unexpectedly")
         }
 
         scope.launch {
-            combined
-                .sample(NOTIFICATION_UPDATE_INTERVAL_MS)
+            combined.sample(NOTIFICATION_UPDATE_INTERVAL_MS)
                 .catch { e -> Log.e(TAG, "Notification flow error", e) }
                 .collect { (state, config) ->
                     notification.update(state, config, _crossingMuted.value)
@@ -173,14 +177,17 @@ class MonitorService : Service() {
         soundPlayer.stopCrossing()
     }
 
+    private fun resetCrossingAlarm() {
+        soundPlayer.stopCrossing()
+        _crossingMuted.value = false
+    }
+
     private fun silenceMaxAltitudeAlarm(minutes: Int) {
         silencedUntilMs = System.currentTimeMillis() + minutes * 60_000L
         lastAlertedMaxFeet = _stateFlow.value?.sessionMaxFeet
         notification.cancelMaxAltitudeNotification()
         Toast.makeText(
-            this,
-            "Max altitude alert silenced for $minutes min",
-            Toast.LENGTH_SHORT
+            this, "Max altitude alert silenced for $minutes min", Toast.LENGTH_SHORT
         ).show()
     }
 
@@ -209,6 +216,7 @@ class MonitorService : Service() {
         if (config.soundEnabled) soundPlayer.playThreshold()
     }
 
+    // ─── Vibration ────────────────────────────────────────────────────────────
 
     private fun vibrate(status: AlertStatus) {
         val pattern = when (status) {
