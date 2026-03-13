@@ -5,7 +5,8 @@ import kotlin.math.abs
 
 class AlertEngine {
 
-    fun evaluate(altitudeFeet: Float, config: AlertConfig): AlertResult {
+    fun evaluate(altitudeFeet: Float, config: AlertConfig, alertsEnabled: Boolean): AlertResult {
+        if (!alertsEnabled) return AlertResult(lower = null, upper = null)
         return AlertResult(
             lower = evaluateLimit(altitudeFeet, config.lowerLimitFeet, approachFromAbove = true,  config.approachThresholdFeet),
             upper = evaluateLimit(altitudeFeet, config.upperLimitFeet, approachFromAbove = false, config.approachThresholdFeet),

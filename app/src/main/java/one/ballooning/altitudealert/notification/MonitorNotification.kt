@@ -47,7 +47,7 @@ class MonitorNotification(private val context: Context) {
             NotificationCompat.Builder(context, CHANNEL_MAX_ALTITUDE)
                 .setSmallIcon(R.drawable.ic_notification_warning)
                 .setContentTitle("Maximum altitude exceeded")
-                .setContentText("Session max: %,d ft".format(state.sessionMaxFeet.toInt()))
+                .setContentText("Altitude: %,d ft".format(state.sessionMaxFeet.toInt()))
                 .setColor(context.getColor(R.color.notification_approaching)).setColorized(true)
                 .setOngoing(false).setAutoCancel(false)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -57,6 +57,10 @@ class MonitorNotification(private val context: Context) {
                     silenceIntent
                 ).build()
         )
+    }
+
+    fun cancelMaxAltitudeNotification() {
+        manager.cancel(NOTIFICATION_ID_MAX_ALTITUDE)
     }
 
     private fun builder(channelId: String): NotificationCompat.Builder {

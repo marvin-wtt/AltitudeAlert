@@ -12,37 +12,37 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.scan
 import kotlin.math.max
 
-// Pure domain class — no Android imports, no DI annotations.
-// Receives its inputs as constructor parameters so it is trivially testable.
+
 class AltitudeMonitor(
     private val readings: Flow<AltitudeReading>,
     private val config: Flow<AlertConfig>,
+    private val alertsEnabled: Flow<Boolean>,
     private val engine: AlertEngine = AlertEngine(),
 ) {
-    fun monitorState(): Flow<MonitorState> = combine(
-        readings,
-        config
-    ) { reading, cfg -> reading to cfg }.scan<Pair<AltitudeReading, AlertConfig>, MonitorState?>(
-            null
-        ) { prev, (reading, cfg) ->
-            val sourceType = resolvedSource(reading, cfg)
-            val altitudeFeet = deriveAltitudeFeet(reading, sourceType, cfg)
-            MonitorState(
-                altitudeFeet = altitudeFeet,
-                sessionMaxFeet = if (prev == null) altitudeFeet else max(
-                    prev.sessionMaxFeet, altitudeFeet
-                ),
-                flightLevel = deriveFlightLevel(reading, cfg),
-                alertResult = engine.evaluate(altitudeFeet, cfg),
-                altitudeSource = sourceType,
-                gpsAccuracyStatus = deriveGpsAccuracyStatus(reading, sourceType),
-                gpsVerticalAccuracyFeet = reading.gpsVerticalAccuracyMetres?.let {
-                    metresToFeet(
-                        it
-                    )
-                },
+    fun monitorState(): Flow<MonitorState> =
+        combine(readings, config, alertsEnabled) { reading, cfg, enabled ->
+            Triple(
+                reading, cfg, enabled
             )
-        }.filterNotNull()
+        }.scan<Triple<AltitudeReading, AlertConfig, Boolean>, MonitorState?>(null) { prev, (reading, cfg, enabled) ->
+                val sourceType = resolvedSource(reading, cfg)
+                val altitudeFeet = deriveAltitudeFeet(reading, sourceType, cfg)
+                MonitorState(
+                    altitudeFeet = altitudeFeet,
+                    sessionMaxFeet = if (prev == null) altitudeFeet else max(
+                        prev.sessionMaxFeet, altitudeFeet
+                    ),
+                    flightLevel = deriveFlightLevel(reading, cfg),
+                    alertResult = engine.evaluate(altitudeFeet, cfg, enabled),
+                    altitudeSource = sourceType,
+                    gpsAccuracyStatus = deriveGpsAccuracyStatus(reading, sourceType),
+                    gpsVerticalAccuracyFeet = reading.gpsVerticalAccuracyMetres?.let {
+                        metresToFeet(
+                            it
+                        )
+                    },
+                )
+            }.filterNotNull()
 
     private fun resolvedSource(reading: AltitudeReading, cfg: AlertConfig): AltitudeSourceType =
         when {

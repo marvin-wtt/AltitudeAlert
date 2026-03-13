@@ -216,7 +216,7 @@ private fun LiveStatusCard(uiState: MainUiState, onAction: (MainAction) -> Unit)
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "Session max",
+                        "Max",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

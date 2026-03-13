@@ -56,7 +56,7 @@ object MonitorStatusFormatter {
             ?.takeIf { it.status != AlertStatus.CLEAR }
             ?.let { append("\nUpper: ${limitStatusLine(it.status, it.distanceFeet)}") }
 
-        append("\nSession max: %,d ft".format(state.sessionMaxFeet.toInt()))
+        append("\nMax: %,d ft".format(state.sessionMaxFeet.toInt()))
 
         formatSourceNote(state).takeIf { it.isNotEmpty() }?.let { append("\n$it") }
     }

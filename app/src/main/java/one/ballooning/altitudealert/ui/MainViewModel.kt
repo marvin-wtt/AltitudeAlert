@@ -10,7 +10,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import one.ballooning.altitudealert.AltitudeAlertApplication
@@ -155,12 +154,6 @@ class MainViewModel(
     val uiState: StateFlow<MainUiState> = _uiState
 
     init {
-        // Always reset alertsEnabled to false on startup — both so the UI starts
-        // off and so the service (which reads configFlow directly) agrees.
-        viewModelScope.launch {
-            val current = configRepository.configFlow.first()
-            if (current.alertsEnabled) configRepository.save(current.copy(alertsEnabled = false))
-        }
         // Pre-populate UI from persisted config so the user never sees blank fields.
         viewModelScope.launch {
             configRepository.configFlow.collect { config ->
@@ -181,17 +174,22 @@ class MainViewModel(
 
     // ─── Service connection ───────────────────────────────────────────────────
 
+    private var monitorBinder: MonitorService.MonitorBinder? = null
+
     val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
-            val monitorBinder = binder as MonitorService.MonitorBinder
+            monitorBinder = binder as MonitorService.MonitorBinder
+            // Sync runtime alert state to the service immediately on connect.
+            monitorBinder?.setAlertsEnabled(_uiState.value.alertsEnabled)
             viewModelScope.launch {
-                monitorBinder.stateFlow.collect { state ->
+                monitorBinder?.stateFlow?.collect { state ->
                     if (state != null) _uiState.update { it.copy(liveStatus = state.toLiveStatus()) }
                 }
             }
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
+            monitorBinder = null
             _uiState.update { it.copy(liveStatus = LiveAltitudeStatus()) }
         }
     }
@@ -314,16 +312,21 @@ class MainViewModel(
     private fun toggleAlerts() {
         val state = _uiState.value
         if (state.alertsEnabled) {
-            updateAndPersist { it.copy(alertsEnabled = false) }
+            setAlertsEnabled(false)
             return
         }
         when (state.monitorReadiness) {
             MonitorReadiness.MISSING_PERMISSIONS -> Unit
             MonitorReadiness.MISSING_ALTITUDE_SOURCE -> Unit
             MonitorReadiness.READY -> {
-                if (state.isConfigValid) updateAndPersist { it.copy(alertsEnabled = true) }
+                if (state.isConfigValid) setAlertsEnabled(true)
             }
         }
+    }
+
+    private fun setAlertsEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(alertsEnabled = enabled) }
+        monitorBinder?.setAlertsEnabled(enabled)
     }
 
     private fun updateAndPersist(transform: (MainUiState) -> MainUiState) {
@@ -346,7 +349,6 @@ class MainViewModel(
         ),
         vibrate = s.thresholdAlarm.vibrationEnabled,
         alarmSoundUri = null,
-        alertsEnabled = false, // always persisted as off; runtime state only
     )
 
     private fun applyConfigToUiState(current: MainUiState, config: AlertConfig): MainUiState =

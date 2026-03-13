@@ -12,6 +12,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
+import android.widget.Toast
 import androidx.core.content.getSystemService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +40,9 @@ class MonitorService : Service() {
 
     inner class MonitorBinder : Binder() {
         val stateFlow: StateFlow<MonitorState?> get() = _stateFlow.asStateFlow()
+        fun setAlertsEnabled(enabled: Boolean) {
+            _alertsEnabled.value = enabled
+        }
     }
 
     private val binder = MonitorBinder()
@@ -49,6 +53,8 @@ class MonitorService : Service() {
     private val _stateFlow = MutableStateFlow<MonitorState?>(null)
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
+    private val _alertsEnabled = MutableStateFlow(false)
+    private lateinit var notification: MonitorNotification
     private var mediaPlayer: MediaPlayer? = null
     private var previousBandResult: AlertResult? = null
     private var lastAlertedMaxFeet: Float? = null
@@ -64,10 +70,11 @@ class MonitorService : Service() {
     override fun onCreate() {
         super.onCreate()
         val app = application as AltitudeAlertApplication
-        val notification = MonitorNotification(applicationContext)
+        notification = MonitorNotification(applicationContext)
         val monitor = AltitudeMonitor(
             readings = app.altitudeDataSource.readings,
             config = app.configRepository.configFlow,
+            alertsEnabled = _alertsEnabled,
         )
 
         MonitorNotification.createChannels(applicationContext)
@@ -100,6 +107,9 @@ class MonitorService : Service() {
             val minutes = intent.getIntExtra(EXTRA_SILENCE_MINUTES, 5)
             silencedUntilMs = System.currentTimeMillis() + minutes * 60_000L
             lastAlertedMaxFeet = _stateFlow.value?.sessionMaxFeet
+            notification.cancelMaxAltitudeNotification()
+            Toast.makeText(this, "Max altitude alert silenced for $minutes min", Toast.LENGTH_SHORT)
+                .show()
         }
         return START_STICKY
     }
@@ -114,7 +124,12 @@ class MonitorService : Service() {
 
     private fun handleBandAlerts(state: MonitorState, config: AlertConfig) {
         val current = state.alertResult
+        // Always track previous result so worsening detection is correct when
+        // alerts are re-enabled — avoids a false trigger on the first emission.
         val previous = previousBandResult
+        previousBandResult = current
+
+        if (!_alertsEnabled.value) return
         val worsened = hasWorsened(
             previous?.lower?.status,
             current.lower?.status
@@ -127,7 +142,6 @@ class MonitorService : Service() {
                 )
             }
         }
-        previousBandResult = current
     }
 
     private fun hasWorsened(prev: AlertStatus?, current: AlertStatus?): Boolean {
@@ -141,7 +155,8 @@ class MonitorService : Service() {
         val cfg = config.maxAltitude
 
         val isSilenced = silencedUntilMs?.let { it > System.currentTimeMillis() } ?: false
-        if (!config.alertsEnabled || !cfg.enabled || isSilenced) {
+        if (!_alertsEnabled.value || !cfg.enabled || isSilenced) {
+            // Advance the baseline silently so re-enabling doesn't trigger a stale alert.
             lastAlertedMaxFeet = state.sessionMaxFeet
             return
         }
@@ -150,12 +165,11 @@ class MonitorService : Service() {
         val baseline = lastAlertedMaxFeet
         if (baseline != null && state.sessionMaxFeet <= baseline + cfg.exceedanceMarginFeet) return
 
-        Log.d(TAG, "alertEnabled=${config.alertsEnabled}")
-
         lastAlertedMaxFeet = state.sessionMaxFeet
+        // Always silence an alert for the next 1ßs to avoid alert spamming
         silencedUntilMs = System.currentTimeMillis() + (10 * 60 * 1000)
 
-        val notification = MonitorNotification(applicationContext)
+        notification.cancelMaxAltitudeNotification()
         notification.postMaxAltitudeNotification(state, cfg.silenceDurationMinutes)
         if (config.vibrate) vibrate(AlertStatus.APPROACHING)
         config.alarmSoundUri?.let { playSound(it, looping = false) }
