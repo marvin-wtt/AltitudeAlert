@@ -113,14 +113,10 @@ private fun LiveStatusCard(uiState: MainUiState, onAction: (MainAction) -> Unit)
 
             // ── Altitude ───────────────────────────────────────────────────────
             val altText = when {
-                status.flightLevel != null && uiState.referenceMode == ReferenceMode.FLIGHT_LEVEL -> "FL%03d".format(
-                    status.flightLevel
-                )
-
                 status.altitudeFeet != null -> "%,d ft".format(status.altitudeFeet.toInt())
-
                 else -> "– – –"
             }
+            val flText = status.flightLevel?.let { "FL%03d".format(it) }
 
             Text(
                 text = altText,
@@ -128,14 +124,21 @@ private fun LiveStatusCard(uiState: MainUiState, onAction: (MainAction) -> Unit)
                 fontWeight = FontWeight.Bold,
                 color = accentColor,
             )
+            if (flText != null) {
+                Text(
+                    text = flText,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             // ── GPS accuracy (when GPS is active source) ───────────────────────
             if (status.altitudeSource == AltitudeSourceType.GPS) {
                 val accStr = status.gpsVerticalAccuracyFeet?.let { " ±${it.toInt()} ft" } ?: ""
                 val (label, isWarning) = when (status.gpsAccuracyStatus) {
                     GpsAccuracyStatus.LOST -> "GPS signal lost" to true
-                    GpsAccuracyStatus.LOW -> "GPS low accuracy$accStr" to true
-                    else -> "GPS$accStr" to false
+                    GpsAccuracyStatus.LOW  -> "GPS low accuracy$accStr" to uiState.warnOnLowAccuracy
+                    else                   -> "GPS$accStr" to false
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -323,7 +326,7 @@ private fun AlertsCard(uiState: MainUiState, onAction: (MainAction) -> Unit) {
 
             Button(
                 onClick = { onAction(MainAction.ToggleAlerts) },
-                enabled = uiState.alertsEnabled || (uiState.monitorReadiness == MonitorReadiness.READY && uiState.isConfigValid),
+                enabled = uiState.alertsEnabled || (uiState.monitorReadiness == MonitorReadiness.READY && uiState.isConfigValid && uiState.liveStatus.altitudeFeet != null),
                 modifier = Modifier.fillMaxWidth(),
                 colors = if (uiState.alertsEnabled) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 else ButtonDefaults.buttonColors(),
@@ -386,7 +389,6 @@ private fun SourceCard(uiState: MainUiState, onAction: (MainAction) -> Unit) {
 
 // ─── Altitude band card ───────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AltitudeBandCard(uiState: MainUiState, onAction: (MainAction) -> Unit) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -394,83 +396,62 @@ private fun AltitudeBandCard(uiState: MainUiState, onAction: (MainAction) -> Uni
             modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text("Altitude band", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Enter feet, or a flight level (e.g. 65 → FL065 = 6,500 ft).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
-            // Reference mode
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = uiState.referenceMode == ReferenceMode.ALTITUDE,
-                    onClick = { onAction(MainAction.SetReferenceMode(ReferenceMode.ALTITUDE)) },
-                    shape = SegmentedButtonDefaults.itemShape(0, 2),
-                ) { Text("Altitude") }
-                SegmentedButton(
-                    selected = uiState.referenceMode == ReferenceMode.FLIGHT_LEVEL,
-                    onClick = { onAction(MainAction.SetReferenceMode(ReferenceMode.FLIGHT_LEVEL)) },
-                    shape = SegmentedButtonDefaults.itemShape(1, 2),
-                ) { Text("Flight level") }
-            }
+            val lowerV = uiState.bandLowerAltitudeValidation
+            OutlinedTextField(
+                value = uiState.bandLowerAltitudeFeet,
+                onValueChange = { onAction(MainAction.UpdateBandLowerAltitude(flToFeet(it))) },
+                label = { Text("Lower limit") },
+                singleLine = true,
+                isError = !lowerV.isValid,
+                supportingText = {
+                    val errorMessage = lowerV.errorMessage
+                    if (errorMessage != null) Text(errorMessage)
+                    else flightLevelHint(uiState.bandLowerAltitudeFeet)?.let { Text(it) }
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Next,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
 
-            // Limit inputs
-            if (uiState.referenceMode == ReferenceMode.ALTITUDE) {
-                val lowerV = uiState.bandLowerAltitudeValidation
-                OutlinedTextField(
-                    value = uiState.bandLowerAltitudeFeet,
-                    onValueChange = { onAction(MainAction.UpdateBandLowerAltitude(it)) },
-                    label = { Text("Lower limit (ft)") },
-                    singleLine = true,
-                    isError = !lowerV.isValid,
-                    supportingText = lowerV.errorMessage?.let { { Text(it) } },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                val upperV = uiState.bandUpperAltitudeValidation
-                OutlinedTextField(
-                    value = uiState.bandUpperAltitudeFeet,
-                    onValueChange = { onAction(MainAction.UpdateBandUpperAltitude(it)) },
-                    label = { Text("Upper limit (ft)") },
-                    singleLine = true,
-                    isError = !upperV.isValid,
-                    supportingText = upperV.errorMessage?.let { { Text(it) } },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            } else {
-                val lowerV = uiState.bandLowerFLValidation
-                OutlinedTextField(
-                    value = uiState.bandLowerFlightLevel,
-                    onValueChange = { onAction(MainAction.UpdateBandLowerFlightLevel(it)) },
-                    label = { Text("Lower flight level") },
-                    singleLine = true,
-                    isError = !lowerV.isValid,
-                    supportingText = lowerV.errorMessage?.let { { Text(it) } },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                val upperV = uiState.bandUpperFLValidation
-                OutlinedTextField(
-                    value = uiState.bandUpperFlightLevel,
-                    onValueChange = { onAction(MainAction.UpdateBandUpperFlightLevel(it)) },
-                    label = { Text("Upper flight level") },
-                    singleLine = true,
-                    isError = !upperV.isValid,
-                    supportingText = upperV.errorMessage?.let { { Text(it) } },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+            val upperV = uiState.bandUpperAltitudeValidation
+            OutlinedTextField(
+                value = uiState.bandUpperAltitudeFeet,
+                onValueChange = { onAction(MainAction.UpdateBandUpperAltitude(flToFeet(it))) },
+                label = { Text("Upper limit") },
+                singleLine = true,
+                isError = !upperV.isValid,
+                supportingText = {
+                    val errorMessage = upperV.errorMessage
+                    if (errorMessage != null) Text(errorMessage)
+                    else flightLevelHint(uiState.bandUpperAltitudeFeet)?.let { Text(it) }
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
+}
+
+private fun flToFeet(raw: String): String {
+    val n = raw.trim().toIntOrNull()
+    return if (n != null && n in 1..600) (n * 100).toString() else raw
+}
+
+private fun flightLevelHint(value: String): String? {
+    val n = value.trim().toIntOrNull() ?: return null
+    if (n !in 1..600) return null
+    return "FL%03d = %,d ft".format(n, n * 100)
 }
 
 // ─── Shared ───────────────────────────────────────────────────────────────────

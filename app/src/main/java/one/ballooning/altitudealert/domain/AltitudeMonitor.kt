@@ -32,7 +32,7 @@ class AltitudeMonitor(
                     sessionMaxFeet = if (prev == null) altitudeFeet else max(
                         prev.sessionMaxFeet, altitudeFeet
                     ),
-                    flightLevel = deriveFlightLevel(reading, cfg),
+                    flightLevel = deriveFlightLevel(reading),
                     alertResult = engine.evaluate(altitudeFeet, cfg, enabled),
                     altitudeSource = sourceType,
                     gpsAccuracyStatus = deriveGpsAccuracyStatus(reading, sourceType),
@@ -63,8 +63,7 @@ class AltitudeMonitor(
             ?: error("No altitude available")
     }
 
-    private fun deriveFlightLevel(reading: AltitudeReading, cfg: AlertConfig): Int? {
-        if (!cfg.useFlightLevels) return null
+    private fun deriveFlightLevel(reading: AltitudeReading): Int? {
         return reading.pressureHpa?.let { pressureToFlightLevel(it) }
     }
 

@@ -8,12 +8,9 @@ sealed class MainAction {
     object RequestPermissions : MainAction()
     object OpenAppSettings : MainAction()
     object MuteAlarm : MainAction()
-    data class SetReferenceMode(val mode: ReferenceMode) : MainAction()
     data class SetPreferredSource(val source: PreferredSource) : MainAction()
     data class UpdateBandLowerAltitude(val value: String) : MainAction()
     data class UpdateBandUpperAltitude(val value: String) : MainAction()
-    data class UpdateBandLowerFlightLevel(val value: String) : MainAction()
-    data class UpdateBandUpperFlightLevel(val value: String) : MainAction()
     data class UpdateQnh(val value: String) : MainAction()
 }
 

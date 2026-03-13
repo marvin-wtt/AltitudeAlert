@@ -28,8 +28,6 @@ import one.ballooning.altitudealert.service.MonitorService
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
 enum class AppScreen { MAIN, ADVANCED_SETTINGS }
-enum class ReferenceMode { ALTITUDE, FLIGHT_LEVEL }
-
 // ─── Readiness ────────────────────────────────────────────────────────────────
 
 enum class MonitorReadiness { READY, MISSING_PERMISSIONS, MISSING_ALTITUDE_SOURCE }
@@ -59,12 +57,9 @@ data class MainUiState(
     val permissionsPreviouslyDenied: Boolean = false,
 
     val preferredSource: PreferredSource = PreferredSource.BAROMETER,
-    val referenceMode: ReferenceMode = ReferenceMode.ALTITUDE,
 
     val bandLowerAltitudeFeet: String = "2800",
     val bandUpperAltitudeFeet: String = "3200",
-    val bandLowerFlightLevel: String = "60",
-    val bandUpperFlightLevel: String = "70",
     val qnhHpa: String = "1013",
 
     val approachThresholdFeet: String = "200",
@@ -102,10 +97,6 @@ data class MainUiState(
         get() = Validators.bandLower(bandLowerAltitudeFeet, bandUpperAltitudeFeet)
     val bandUpperAltitudeValidation: ValidationResult
         get() = Validators.bandUpper(bandUpperAltitudeFeet, bandLowerAltitudeFeet)
-    val bandLowerFLValidation: ValidationResult
-        get() = Validators.bandLowerFL(bandLowerFlightLevel, bandUpperFlightLevel)
-    val bandUpperFLValidation: ValidationResult
-        get() = Validators.bandUpperFL(bandUpperFlightLevel, bandLowerFlightLevel)
     val approachThresholdValidation: ValidationResult
         get() = Validators.approachThreshold(approachThresholdFeet)
     val maxAltitudeThresholdValidation: ValidationResult
@@ -120,8 +111,8 @@ data class MainUiState(
     val isConfigValid: Boolean
         get() = listOf(
             qnhValidation,
-            if (referenceMode == ReferenceMode.ALTITUDE) bandLowerAltitudeValidation else bandLowerFLValidation,
-            if (referenceMode == ReferenceMode.ALTITUDE) bandUpperAltitudeValidation else bandUpperFLValidation,
+            bandLowerAltitudeValidation,
+            bandUpperAltitudeValidation,
             approachThresholdValidation,
             maxAltitudeThresholdValidation,
             maxAltitudeMinAltitudeValidation,
@@ -219,7 +210,6 @@ class MainViewModel(
             MainAction.RequestPermissions -> Unit
             MainAction.OpenAppSettings -> Unit
             MainAction.MuteAlarm -> monitorBinder?.muteAlarm()
-            is MainAction.SetReferenceMode -> updateAndPersist { it.copy(referenceMode = action.mode) }
             is MainAction.SetPreferredSource -> updateAndPersist { it.copy(preferredSource = action.source) }
             is MainAction.UpdateBandLowerAltitude -> updateAndPersist {
                 it.copy(
@@ -230,18 +220,6 @@ class MainViewModel(
             is MainAction.UpdateBandUpperAltitude -> updateAndPersist {
                 it.copy(
                     bandUpperAltitudeFeet = action.value
-                )
-            }
-
-            is MainAction.UpdateBandLowerFlightLevel -> updateAndPersist {
-                it.copy(
-                    bandLowerFlightLevel = action.value
-                )
-            }
-
-            is MainAction.UpdateBandUpperFlightLevel -> updateAndPersist {
-                it.copy(
-                    bandUpperFlightLevel = action.value
                 )
             }
 
@@ -302,7 +280,9 @@ class MainViewModel(
             MonitorReadiness.MISSING_PERMISSIONS -> Unit
             MonitorReadiness.MISSING_ALTITUDE_SOURCE -> Unit
             MonitorReadiness.READY -> {
-                if (state.isConfigValid) setAlertsEnabled(true)
+                if (state.isConfigValid && state.liveStatus.altitudeFeet != null) setAlertsEnabled(
+                    true
+                )
             }
         }
     }
@@ -326,7 +306,6 @@ class MainViewModel(
         lowerLimitFeet = s.bandLowerAltitudeFeet.toFloatOrNull() ?: 2800f,
         upperLimitFeet = s.bandUpperAltitudeFeet.toFloatOrNull() ?: 3200f,
         qnhHpa = s.qnhHpa.toFloatOrNull() ?: 1013.25f,
-        useFlightLevels = s.referenceMode == ReferenceMode.FLIGHT_LEVEL,
         preferredSource = s.preferredSource,
         approachThresholdFeet = s.approachThresholdFeet.toFloatOrNull() ?: 200f,
         maxAltitude = MaxAltitudeConfig(
@@ -344,11 +323,8 @@ class MainViewModel(
         current.copy(
             // alertsEnabled is intentionally not restored — alerts always start off.
             preferredSource = config.preferredSource,
-            referenceMode = if (config.useFlightLevels) ReferenceMode.FLIGHT_LEVEL else ReferenceMode.ALTITUDE,
             bandLowerAltitudeFeet = config.lowerLimitFeet.toInt().toString(),
             bandUpperAltitudeFeet = config.upperLimitFeet.toInt().toString(),
-            bandLowerFlightLevel = (config.lowerLimitFeet / 100).toInt().toString(),
-            bandUpperFlightLevel = (config.upperLimitFeet / 100).toInt().toString(),
             qnhHpa = config.qnhHpa.toInt().toString(),
             approachThresholdFeet = config.approachThresholdFeet.toInt().toString(),
             maxAltitudeEnabled = config.maxAltitude.enabled,

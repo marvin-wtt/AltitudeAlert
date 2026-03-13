@@ -44,7 +44,7 @@ class AlarmSoundPlayer(private val scope: CoroutineScope) {
                 delay(PAIR_GAP_MS)
                 // Low pair
                 repeat(2) {
-                    toneGen.startTone(ToneGenerator.TONE_CDMA_LOW_SS, BEEP_MS)
+                    toneGen.startTone(ToneGenerator.TONE_SUP_ERROR, BEEP_MS)
                     delay(BEEP_MS + BEEP_GAP_MS)
                 }
                 delay(PAIR_GAP_MS)

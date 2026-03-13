@@ -9,8 +9,6 @@ import one.ballooning.altitudealert.data.source.FusedAltitudeDataSource
 
 /**
  * Task list
- * TODO Find a way to close the app properly
- * FIXME Disable start button until service is ready with data
  * TODO Validate Barometer against GPS
  * TODO Alert when GPS is list
  * TODO Merge Altitude and flight levels
