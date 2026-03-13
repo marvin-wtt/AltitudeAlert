@@ -10,6 +10,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import one.ballooning.altitudealert.AltitudeAlertApplication
@@ -131,11 +132,11 @@ class MainViewModel(
     val uiState: StateFlow<MainUiState> = _uiState
 
     init {
-        // Pre-populate UI from persisted config so the user never sees blank fields.
+        // Pre-populate UI from persisted config once on startup.
+        // Using first() (not collect) so the DataStore never overwrites what the user is typing.
         viewModelScope.launch {
-            configRepository.configFlow.collect { config ->
-                _uiState.update { applyConfigToUiState(it, config) }
-            }
+            val config = configRepository.configFlow.first()
+            _uiState.update { applyConfigToUiState(it, config) }
         }
     }
 
@@ -211,23 +212,19 @@ class MainViewModel(
             MainAction.OpenAppSettings -> Unit
             MainAction.MuteAlarm -> monitorBinder?.muteAlarm()
             is MainAction.SetPreferredSource -> updateAndPersist { it.copy(preferredSource = action.source) }
-            is MainAction.UpdateBandLowerAltitude -> updateAndPersist {
-                it.copy(
-                    bandLowerAltitudeFeet = action.value
-                )
+            is MainAction.UpdateBandLowerAltitude -> {
+                _uiState.update { it.copy(bandLowerAltitudeFeet = action.value) }
+                if (action.value.toFloatOrNull() != null) persistIfValid()
             }
 
-            is MainAction.UpdateBandUpperAltitude -> updateAndPersist {
-                it.copy(
-                    bandUpperAltitudeFeet = action.value
-                )
+            is MainAction.UpdateBandUpperAltitude -> {
+                _uiState.update { it.copy(bandUpperAltitudeFeet = action.value) }
+                if (action.value.toFloatOrNull() != null) persistIfValid()
             }
 
             is MainAction.UpdateQnh -> {
                 _uiState.update { it.copy(qnhHpa = action.value) }
-                action.value.toFloatOrNull()?.let { qnh ->
-                    viewModelScope.launch { configRepository.updateQnh(qnh) }
-                }
+                if (action.value.toFloatOrNull() != null) persistIfValid()
             }
         }
     }
@@ -239,8 +236,10 @@ class MainViewModel(
             AdvancedAction.NavigateBack ->
                 _uiState.update { it.copy(currentScreen = AppScreen.MAIN) }
 
-            is AdvancedAction.SetDistanceThresholdFeet ->
-                updateAndPersist { it.copy(approachThresholdFeet = action.value) }
+            is AdvancedAction.SetDistanceThresholdFeet -> {
+                _uiState.update { it.copy(approachThresholdFeet = action.value) }
+                if (action.value.toFloatOrNull() != null) persistIfValid()
+            }
 
             is AdvancedAction.SetThresholdAlertEnabled ->
                 updateAndPersist { it.copy(thresholdAlertEnabled = action.enabled) }
@@ -257,14 +256,20 @@ class MainViewModel(
             is AdvancedAction.SetMaxAltitudeAlertEnabled ->
                 updateAndPersist { it.copy(maxAltitudeEnabled = action.enabled) }
 
-            is AdvancedAction.UpdateMaxAltitudeThreshold ->
-                updateAndPersist { it.copy(maxAltitudeThresholdFeet = action.value) }
+            is AdvancedAction.UpdateMaxAltitudeThreshold -> {
+                _uiState.update { it.copy(maxAltitudeThresholdFeet = action.value) }
+                if (action.value.toFloatOrNull() != null) persistIfValid()
+            }
 
-            is AdvancedAction.UpdateMaxAltitudeMinAltitude ->
-                updateAndPersist { it.copy(maxAltitudeMinAltitudeFeet = action.value) }
+            is AdvancedAction.UpdateMaxAltitudeMinAltitude -> {
+                _uiState.update { it.copy(maxAltitudeMinAltitudeFeet = action.value) }
+                if (action.value.toFloatOrNull() != null) persistIfValid()
+            }
 
-            is AdvancedAction.UpdateMaxAltitudeSilenceMinutes ->
-                updateAndPersist { it.copy(maxAltitudeSilenceMinutes = action.value) }
+            is AdvancedAction.UpdateMaxAltitudeSilenceMinutes -> {
+                _uiState.update { it.copy(maxAltitudeSilenceMinutes = action.value) }
+                if (action.value.toIntOrNull() != null) persistIfValid()
+            }
         }
     }
 
@@ -300,6 +305,18 @@ class MainViewModel(
     private fun updateAndPersist(transform: (MainUiState) -> MainUiState) {
         _uiState.update(transform)
         viewModelScope.launch { configRepository.save(buildConfig(_uiState.value)) }
+    }
+
+    private fun persistIfValid() {
+        val s = _uiState.value
+        val allParseable = s.bandLowerAltitudeFeet.toFloatOrNull() != null &&
+                s.bandUpperAltitudeFeet.toFloatOrNull() != null &&
+                s.qnhHpa.toFloatOrNull() != null &&
+                s.approachThresholdFeet.toFloatOrNull() != null &&
+                s.maxAltitudeThresholdFeet.toFloatOrNull() != null &&
+                s.maxAltitudeMinAltitudeFeet.toFloatOrNull() != null &&
+                s.maxAltitudeSilenceMinutes.toIntOrNull() != null
+        if (allParseable) viewModelScope.launch { configRepository.save(buildConfig(s)) }
     }
 
     private fun buildConfig(s: MainUiState): AlertConfig = AlertConfig(

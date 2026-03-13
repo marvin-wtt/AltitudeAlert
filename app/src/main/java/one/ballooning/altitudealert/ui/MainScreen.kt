@@ -31,6 +31,7 @@ import android.graphics.Typeface
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -277,7 +278,19 @@ private fun LiveStatusCard(uiState: MainUiState, onAction: (MainAction) -> Unit)
     }
 }
 
-
+/**
+ * Band position indicator.
+ *
+ * Visual zones (left → right across the band):
+ *   [ grey ] [ threshold zone ] [ safe centre ] [ threshold zone ] [ grey ]
+ *
+ * - Grey track: outside the band
+ * - Threshold zones: band colour at 25% alpha  ← clearly distinct from centre
+ * - Safe centre: band colour at full opacity
+ * - Thin divider lines mark the threshold boundaries
+ * - Circle marker: onSurface fill with surface ring
+ * - Labels anchored below each band edge tick
+ */
 @Composable
 private fun BandIndicator(
     altitudeFeet: Float?,
@@ -297,11 +310,9 @@ private fun BandIndicator(
     val safeColor = markerColor
     val approachColor = markerColor.copy(alpha = 0.30f)
 
-    Canvas(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(56.dp)
-    ) {
+    Canvas(modifier = modifier
+        .fillMaxWidth()
+        .height(56.dp)) {
         // ── Coordinate mapping ────────────────────────────────────────────────
         // Margin = 30% of band width each side → band fills ~62% of track width
         val bandRange = (upperFeet - lowerFeet).coerceAtLeast(1f)
@@ -607,7 +618,8 @@ private fun AltitudeBandCard(uiState: MainUiState, onAction: (MainAction) -> Uni
             val upperV = uiState.bandUpperAltitudeValidation
             OutlinedTextField(
                 value = uiState.bandUpperAltitudeFeet,
-                onValueChange = { onAction(MainAction.UpdateBandUpperAltitude(flToFeet(it))) },
+                // Raw value stored as-is while typing; FL conversion happens on focus loss only.
+                onValueChange = { onAction(MainAction.UpdateBandUpperAltitude(it)) },
                 label = { Text("Upper limit") },
                 singleLine = true,
                 isError = !upperV.isValid,
@@ -620,13 +632,18 @@ private fun AltitudeBandCard(uiState: MainUiState, onAction: (MainAction) -> Uni
                     keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Done,
                 ),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { focus ->
+                        if (!focus.isFocused)
+                            onAction(MainAction.UpdateBandUpperAltitude(flToFeet(uiState.bandUpperAltitudeFeet)))
+                    },
             )
 
             val lowerV = uiState.bandLowerAltitudeValidation
             OutlinedTextField(
                 value = uiState.bandLowerAltitudeFeet,
-                onValueChange = { onAction(MainAction.UpdateBandLowerAltitude(flToFeet(it))) },
+                onValueChange = { onAction(MainAction.UpdateBandLowerAltitude(it)) },
                 label = { Text("Lower limit") },
                 singleLine = true,
                 isError = !lowerV.isValid,
@@ -639,7 +656,12 @@ private fun AltitudeBandCard(uiState: MainUiState, onAction: (MainAction) -> Uni
                     keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Next,
                 ),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { focus ->
+                        if (!focus.isFocused)
+                            onAction(MainAction.UpdateBandLowerAltitude(flToFeet(uiState.bandLowerAltitudeFeet)))
+                    },
             )
         }
     }

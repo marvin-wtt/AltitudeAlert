@@ -181,12 +181,13 @@ class MonitorService : Service() {
             currOverall == AlertStatus.CROSSED && prevOverall != AlertStatus.CROSSED -> {
                 if (!_crossingMuted.value) {
                     if (config.soundEnabled) soundPlayer.startCrossing()
-                    if (config.vibrateEnabled) vibrate(AlertStatus.CROSSED)
+                    if (config.vibrateEnabled) startCrossingVibration()
                 }
             }
             // Was crossing, now only approaching — stop alarm
             currOverall != AlertStatus.CROSSED && prevOverall == AlertStatus.CROSSED -> {
                 soundPlayer.stopCrossing()
+                stopCrossingVibration()
             }
             // Newly approaching from clear
             currOverall == AlertStatus.APPROACHING && prevOverall == AlertStatus.CLEAR -> {
@@ -201,10 +202,12 @@ class MonitorService : Service() {
     private fun muteCrossingAlarm() {
         _crossingMuted.value = true
         soundPlayer.stopCrossing()
+        stopCrossingVibration()
     }
 
     private fun resetCrossingAlarm() {
         soundPlayer.stopCrossing()
+        stopCrossingVibration()
         _crossingMuted.value = false
     }
 
@@ -256,7 +259,7 @@ class MonitorService : Service() {
 
         lastAlertedMaxFeet = sessionMax
         // Always silence an alert for the next 1ßs to avoid alert spamming
-        silencedUntilMs = System.currentTimeMillis() + (10 * 1000)
+        silencedUntilMs = System.currentTimeMillis() + (10 * 60 * 1000)
 
         notification.cancelMaxAltitudeNotification()
         notification.postMaxAltitudeNotification(state, cfg.silenceDurationMinutes)
@@ -270,9 +273,17 @@ class MonitorService : Service() {
         val pattern = when (status) {
             AlertStatus.CLEAR -> return
             AlertStatus.APPROACHING -> VIBRATE_SHORT
-            AlertStatus.CROSSED -> VIBRATE_LONG
+            AlertStatus.CROSSED -> return  // handled by startCrossingVibration
         }
         vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
+    }
+
+    private fun startCrossingVibration() {
+        vibrator.vibrate(VibrationEffect.createWaveform(VIBRATE_CROSSING_CYCLE, 0))
+    }
+
+    private fun stopCrossingVibration() {
+        vibrator.cancel()
     }
 
     companion object {
@@ -281,7 +292,7 @@ class MonitorService : Service() {
         const val ACTION_SILENCE_MAX_ALTITUDE = "one.ballooning.altitudealert.SILENCE_MAX_ALTITUDE"
         const val EXTRA_SILENCE_MINUTES = "silence_minutes"
         private val VIBRATE_SHORT = longArrayOf(0, 150, 100, 150)
-        private val VIBRATE_LONG = longArrayOf(0, 500, 150, 500, 150, 500)
+        private val VIBRATE_CROSSING_CYCLE = longArrayOf(0, 400, 200, 400, 200, 400)
         private const val NOTIFICATION_UPDATE_INTERVAL_MS = 500L
     }
 }

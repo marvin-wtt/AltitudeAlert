@@ -17,7 +17,7 @@ class AlarmSoundPlayer(private val scope: CoroutineScope) {
         scope.launch {
             repeat(3) {
                 toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, BEEP_MS.toInt())
-                delay(BEEP_GAP_MS)
+                delay(BEEP_GAP_MS * 3)
             }
         }
     }
