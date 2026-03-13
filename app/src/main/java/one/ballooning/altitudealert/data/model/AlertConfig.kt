@@ -21,6 +21,7 @@ data class AlertConfig(
     val preferredSource: PreferredSource = PreferredSource.BAROMETER,
     val approachThresholdFeet: Float = 200f,
     val maxAltitude: MaxAltitudeConfig = MaxAltitudeConfig(),
-    val vibrate: Boolean = true,
-    val alarmSoundUri: String? = null,
+    val thresholdAlertEnabled: Boolean = true,
+    val soundEnabled: Boolean = true,
+    val vibrateEnabled: Boolean = true,
 )

@@ -46,13 +46,6 @@ data class LiveAltitudeStatus(
     val sessionMaxFeet: Float? = null,
 )
 
-data class AlarmConfig(
-    val soundEnabled: Boolean = true,
-    val vibrationEnabled: Boolean = true,
-    val repeatEnabled: Boolean = false,
-    val repeatSeconds: String = "5",
-)
-
 // ─── UI state ─────────────────────────────────────────────────────────────────
 
 data class MainUiState(
@@ -76,8 +69,10 @@ data class MainUiState(
 
     val approachThresholdFeet: String = "200",
 
-    val thresholdAlarm: AlarmConfig = AlarmConfig(),
-    val crossingAlarm: AlarmConfig = AlarmConfig(repeatEnabled = true, repeatSeconds = "3"),
+    val thresholdAlertEnabled: Boolean = true,
+    val soundEnabled: Boolean = true,
+    val vibrateEnabled: Boolean = true,
+    val crossingAlarmMuted: Boolean = false,
 
     val warnOnLowAccuracy: Boolean = true,
 
@@ -122,13 +117,6 @@ data class MainUiState(
     val maxAltitudeSilenceValidation: ValidationResult
         get() = if (maxAltitudeEnabled) Validators.silenceMinutes(maxAltitudeSilenceMinutes)
         else ValidationResult.Valid
-    val thresholdRepeatValidation: ValidationResult
-        get() = if (thresholdAlarm.repeatEnabled) Validators.repeatSeconds(thresholdAlarm.repeatSeconds)
-        else ValidationResult.Valid
-    val crossingRepeatValidation: ValidationResult
-        get() = if (crossingAlarm.repeatEnabled) Validators.repeatSeconds(crossingAlarm.repeatSeconds)
-        else ValidationResult.Valid
-
     val isConfigValid: Boolean
         get() = listOf(
             qnhValidation,
@@ -138,8 +126,6 @@ data class MainUiState(
             maxAltitudeThresholdValidation,
             maxAltitudeMinAltitudeValidation,
             maxAltitudeSilenceValidation,
-            thresholdRepeatValidation,
-            crossingRepeatValidation,
         ).all { it.isValid }
 }
 
@@ -179,11 +165,15 @@ class MainViewModel(
     val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             monitorBinder = binder as MonitorService.MonitorBinder
-            // Sync runtime alert state to the service immediately on connect.
             monitorBinder?.setAlertsEnabled(_uiState.value.alertsEnabled)
             viewModelScope.launch {
                 monitorBinder?.stateFlow?.collect { state ->
                     if (state != null) _uiState.update { it.copy(liveStatus = state.toLiveStatus()) }
+                }
+            }
+            viewModelScope.launch {
+                monitorBinder?.crossingMutedFlow?.collect { muted ->
+                    _uiState.update { it.copy(crossingAlarmMuted = muted) }
                 }
             }
         }
@@ -221,6 +211,7 @@ class MainViewModel(
             MainAction.NavigateToAdvancedSettings -> _uiState.update { it.copy(currentScreen = AppScreen.ADVANCED_SETTINGS) }
             MainAction.RequestPermissions -> Unit
             MainAction.OpenAppSettings -> Unit
+            MainAction.MuteAlarm -> monitorBinder?.muteAlarm()
             is MainAction.SetReferenceMode -> updateAndPersist { it.copy(referenceMode = action.mode) }
             is MainAction.SetPreferredSource -> updateAndPersist { it.copy(preferredSource = action.source) }
             is MainAction.UpdateBandLowerAltitude -> updateAndPersist {
@@ -260,50 +251,49 @@ class MainViewModel(
 
     fun onAdvancedAction(action: AdvancedAction) {
         when (action) {
-            AdvancedAction.NavigateBack ->
-                _uiState.update { it.copy(currentScreen = AppScreen.MAIN) }
+            AdvancedAction.NavigateBack -> _uiState.update { it.copy(currentScreen = AppScreen.MAIN) }
 
-            is AdvancedAction.SetDistanceThresholdFeet ->
-                updateAndPersist { it.copy(approachThresholdFeet = action.value) }
+            is AdvancedAction.SetDistanceThresholdFeet -> updateAndPersist {
+                it.copy(
+                    approachThresholdFeet = action.value
+                )
+            }
 
-            is AdvancedAction.SetThresholdSoundEnabled ->
-                _uiState.update { it.copy(thresholdAlarm = it.thresholdAlarm.copy(soundEnabled = action.enabled)) }
+            is AdvancedAction.SetThresholdAlertEnabled -> updateAndPersist {
+                it.copy(
+                    thresholdAlertEnabled = action.enabled
+                )
+            }
 
-            is AdvancedAction.SetThresholdVibrationEnabled ->
-                updateAndPersist { it.copy(thresholdAlarm = it.thresholdAlarm.copy(vibrationEnabled = action.enabled)) }
+            is AdvancedAction.SetSoundEnabled -> updateAndPersist { it.copy(soundEnabled = action.enabled) }
 
-            is AdvancedAction.SetThresholdRepeatEnabled ->
-                _uiState.update { it.copy(thresholdAlarm = it.thresholdAlarm.copy(repeatEnabled = action.enabled)) }
+            is AdvancedAction.SetVibrateEnabled -> updateAndPersist { it.copy(vibrateEnabled = action.enabled) }
 
-            is AdvancedAction.UpdateThresholdRepeatSeconds ->
-                _uiState.update { it.copy(thresholdAlarm = it.thresholdAlarm.copy(repeatSeconds = action.value)) }
+            is AdvancedAction.SetWarnOnLowAccuracy -> _uiState.update { it.copy(warnOnLowAccuracy = action.enabled) }
 
-            is AdvancedAction.SetCrossingSoundEnabled ->
-                _uiState.update { it.copy(crossingAlarm = it.crossingAlarm.copy(soundEnabled = action.enabled)) }
+            is AdvancedAction.SetMaxAltitudeAlertEnabled -> updateAndPersist {
+                it.copy(
+                    maxAltitudeEnabled = action.enabled
+                )
+            }
 
-            is AdvancedAction.SetCrossingVibrationEnabled ->
-                updateAndPersist { it.copy(crossingAlarm = it.crossingAlarm.copy(vibrationEnabled = action.enabled)) }
+            is AdvancedAction.UpdateMaxAltitudeThreshold -> updateAndPersist {
+                it.copy(
+                    maxAltitudeThresholdFeet = action.value
+                )
+            }
 
-            is AdvancedAction.SetCrossingRepeatEnabled ->
-                _uiState.update { it.copy(crossingAlarm = it.crossingAlarm.copy(repeatEnabled = action.enabled)) }
+            is AdvancedAction.UpdateMaxAltitudeMinAltitude -> updateAndPersist {
+                it.copy(
+                    maxAltitudeMinAltitudeFeet = action.value
+                )
+            }
 
-            is AdvancedAction.UpdateCrossingRepeatSeconds ->
-                _uiState.update { it.copy(crossingAlarm = it.crossingAlarm.copy(repeatSeconds = action.value)) }
-
-            is AdvancedAction.SetWarnOnLowAccuracy ->
-                _uiState.update { it.copy(warnOnLowAccuracy = action.enabled) }
-
-            is AdvancedAction.SetMaxAltitudeAlertEnabled ->
-                updateAndPersist { it.copy(maxAltitudeEnabled = action.enabled) }
-
-            is AdvancedAction.UpdateMaxAltitudeThreshold ->
-                updateAndPersist { it.copy(maxAltitudeThresholdFeet = action.value) }
-
-            is AdvancedAction.UpdateMaxAltitudeMinAltitude ->
-                updateAndPersist { it.copy(maxAltitudeMinAltitudeFeet = action.value) }
-
-            is AdvancedAction.UpdateMaxAltitudeSilenceMinutes ->
-                updateAndPersist { it.copy(maxAltitudeSilenceMinutes = action.value) }
+            is AdvancedAction.UpdateMaxAltitudeSilenceMinutes -> updateAndPersist {
+                it.copy(
+                    maxAltitudeSilenceMinutes = action.value
+                )
+            }
         }
     }
 
@@ -347,8 +337,9 @@ class MainViewModel(
             minAltitudeFeet = s.maxAltitudeMinAltitudeFeet.toFloatOrNull() ?: 500f,
             silenceDurationMinutes = s.maxAltitudeSilenceMinutes.toIntOrNull() ?: 5,
         ),
-        vibrate = s.thresholdAlarm.vibrationEnabled,
-        alarmSoundUri = null,
+        thresholdAlertEnabled = s.thresholdAlertEnabled,
+        soundEnabled = s.soundEnabled,
+        vibrateEnabled = s.vibrateEnabled,
     )
 
     private fun applyConfigToUiState(current: MainUiState, config: AlertConfig): MainUiState =
@@ -366,7 +357,9 @@ class MainViewModel(
             maxAltitudeThresholdFeet = config.maxAltitude.exceedanceMarginFeet.toInt().toString(),
             maxAltitudeMinAltitudeFeet = config.maxAltitude.minAltitudeFeet.toInt().toString(),
             maxAltitudeSilenceMinutes = config.maxAltitude.silenceDurationMinutes.toString(),
-            thresholdAlarm = current.thresholdAlarm.copy(vibrationEnabled = config.vibrate),
+            thresholdAlertEnabled = config.thresholdAlertEnabled,
+            soundEnabled = config.soundEnabled,
+            vibrateEnabled = config.vibrateEnabled,
         )
 }
 

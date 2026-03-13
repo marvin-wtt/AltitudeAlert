@@ -8,6 +8,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.GpsOff
@@ -191,17 +192,32 @@ private fun LiveStatusCard(uiState: MainUiState, onAction: (MainAction) -> Unit)
                                 )
                             })
 
-                        AlertStatus.CROSSED -> AssistChip(
-                            onClick = {},
-                            label = { Text(crossedLabel(uiState)) },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.Warning,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(AssistChipDefaults.IconSize),
-                                    tint = Color(0xFFE53935),
-                                )
-                            })
+                        AlertStatus.CROSSED -> {
+                            AssistChip(
+                                onClick = {},
+                                label = { Text(crossedLabel(uiState)) },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Warning,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(AssistChipDefaults.IconSize),
+                                        tint = Color(0xFFE53935),
+                                    )
+                                })
+                            if (!uiState.crossingAlarmMuted) {
+                                InputChip(
+                                    selected = false,
+                                    onClick = { onAction(MainAction.MuteAlarm) },
+                                    label = { Text("Mute alarm") },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.VolumeOff,
+                                            contentDescription = "Mute alarm",
+                                            modifier = Modifier.size(InputChipDefaults.IconSize),
+                                        )
+                                    })
+                            }
+                        }
                     }
                 }
             }
@@ -216,7 +232,7 @@ private fun LiveStatusCard(uiState: MainUiState, onAction: (MainAction) -> Unit)
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "Max",
+                        "Session max",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

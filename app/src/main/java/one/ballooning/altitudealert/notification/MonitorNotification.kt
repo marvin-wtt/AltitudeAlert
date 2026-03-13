@@ -22,15 +22,27 @@ class MonitorNotification(private val context: Context) {
         builder(CHANNEL_LIVE).setSmallIcon(R.drawable.ic_notification_clear)
             .setContentTitle("Altitude Alert").setContentText("Acquiring altitude…").build()
 
-    fun update(state: MonitorState, config: AlertConfig) {
+    fun update(state: MonitorState, config: AlertConfig, crossingMuted: Boolean) {
         val f = MonitorStatusFormatter.format(state, config)
-        manager.notify(
-            NOTIFICATION_ID_LIVE,
-            builder(CHANNEL_LIVE).setSmallIcon(f.iconRes).setContentTitle(f.title)
-                .setContentText(f.body)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(f.bigText))
-                .setColor(context.getColor(f.colorRes)).setColorized(true).build()
-        )
+        val builder = builder(CHANNEL_LIVE).setSmallIcon(f.iconRes).setContentTitle(f.title)
+            .setContentText(f.body).setStyle(NotificationCompat.BigTextStyle().bigText(f.bigText))
+            .setColor(context.getColor(f.colorRes)).setColorized(true)
+
+        // Show mute button only when the crossing alarm is actively sounding
+        val isCrossing =
+            state.alertResult.overallStatus == one.ballooning.altitudealert.domain.AlertStatus.CROSSED
+        if (isCrossing && !crossingMuted) {
+            val muteIntent = PendingIntent.getService(
+                context, 1,
+                Intent(context, MonitorService::class.java).apply {
+                    action = MonitorService.ACTION_MUTE_CROSSING
+                },
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            builder.addAction(R.drawable.ic_notification_clear, "Mute alarm", muteIntent)
+        }
+
+        manager.notify(NOTIFICATION_ID_LIVE, builder.build())
     }
 
     fun postMaxAltitudeNotification(state: MonitorState, silenceMinutes: Int) {
