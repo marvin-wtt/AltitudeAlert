@@ -3,7 +3,6 @@ package one.ballooning.altitudealert.service
 import android.app.Service
 import android.content.Intent
 import android.os.Binder
-import android.os.Build
 import android.os.IBinder
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -13,6 +12,7 @@ import android.widget.Toast
 import androidx.core.content.getSystemService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -84,12 +84,12 @@ class MonitorService : Service() {
     private var silencedUntilMs: Long? = null
 
     private val vibrator: Vibrator by lazy {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) getSystemService<VibratorManager>()!!.defaultVibrator
-        else @Suppress("DEPRECATION") getSystemService<Vibrator>()!!
+       getSystemService<VibratorManager>()!!.defaultVibrator
     }
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────
 
+    @OptIn(FlowPreview::class)
     override fun onCreate() {
         super.onCreate()
         val app = application as AltitudeAlertApplication
@@ -106,11 +106,13 @@ class MonitorService : Service() {
 
         // Cache the latest config so alert/notification handlers can read it without
         // re-combining — avoids an extra flow hop on every barometer/GPS emission.
-        val latestConfig =
-            app.configRepository.configFlow.stateIn(scope, SharingStarted.Eagerly, AlertConfig())
+        val latestConfig = app.configRepository.configFlow
+            .stateIn(scope, SharingStarted.Eagerly, AlertConfig())
 
         scope.launch {
-            monitor.monitorState().catch { e -> Log.e(TAG, "Flow error", e) }.collect { state ->
+            monitor.monitorState()
+                .catch { e -> Log.e(TAG, "Flow error", e) }
+                .collect { state ->
                     val config = latestConfig.value
                     _stateFlow.value = state
                     handleBandAlerts(state, config)
@@ -121,8 +123,10 @@ class MonitorService : Service() {
         }
 
         scope.launch {
-            monitor.monitorState().sample(NOTIFICATION_UPDATE_INTERVAL_MS)
-                .catch { e -> Log.e(TAG, "Notification flow error", e) }.collect { state ->
+            monitor.monitorState()
+                .sample(NOTIFICATION_UPDATE_INTERVAL_MS)
+                .catch { e -> Log.e(TAG, "Notification flow error", e) }
+                .collect { state ->
                     notification.update(state, latestConfig.value, _crossingMuted.value)
                 }
         }
@@ -252,12 +256,12 @@ class MonitorService : Service() {
 
         lastAlertedMaxFeet = sessionMax
         // Always silence an alert for the next 1ßs to avoid alert spamming
-        silencedUntilMs = System.currentTimeMillis() + (10 * 60 * 1000)
+        silencedUntilMs = System.currentTimeMillis() + (10 * 1000)
 
         notification.cancelMaxAltitudeNotification()
         notification.postMaxAltitudeNotification(state, cfg.silenceDurationMinutes)
         if (config.vibrateEnabled) vibrate(AlertStatus.APPROACHING)
-        if (config.soundEnabled) soundPlayer.playThreshold()
+        if (config.soundEnabled) soundPlayer.playMaxAltitude()
     }
 
     // ─── Vibration ────────────────────────────────────────────────────────────

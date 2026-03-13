@@ -13,6 +13,7 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -52,6 +53,7 @@ class FusedAltitudeDataSource(private val context: Context) : AltitudeDataSource
             )
         }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun gpsFlowWithTimeout(): Flow<Pair<Float?, Float?>> =
         gpsFlow().transformLatest { value ->
                 emit(value)

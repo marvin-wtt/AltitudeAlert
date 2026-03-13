@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.Warning
@@ -214,7 +215,7 @@ private fun LiveStatusCard(uiState: MainUiState, onAction: (MainAction) -> Unit)
                                     label = { Text("Mute alarm") },
                                     leadingIcon = {
                                         Icon(
-                                            Icons.Default.VolumeOff,
+                                            Icons.AutoMirrored.Filled.VolumeOff,
                                             contentDescription = "Mute alarm",
                                             modifier = Modifier.size(InputChipDefaults.IconSize),
                                         )

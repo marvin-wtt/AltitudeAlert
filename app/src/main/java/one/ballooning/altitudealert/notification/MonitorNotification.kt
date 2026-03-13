@@ -135,34 +135,27 @@ class MonitorNotification(private val context: Context) {
             val manager = context.getSystemService<NotificationManager>()!!
             manager.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_LIVE,
-                    "Altitude Monitor",
-                    NotificationManager.IMPORTANCE_LOW
+                    CHANNEL_LIVE, "Altitude Monitor", NotificationManager.IMPORTANCE_LOW
                 ).apply {
                     description = "Live altitude while monitoring is active"
                     setShowBadge(false)
-                }
-            )
+                })
             manager.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_GPS_LOST,
-                    "GPS Signal Lost",
-                    NotificationManager.IMPORTANCE_HIGH
+                    CHANNEL_GPS_LOST, "GPS Signal Lost", NotificationManager.IMPORTANCE_HIGH
                 ).apply {
                     description = "Alerts when GPS signal is lost while monitoring is active"
+                    setSound(null, null)
                     enableVibration(false)
-                }
-            )
+                })
             manager.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_MAX_ALTITUDE,
-                    "Max Altitude Alert",
-                    NotificationManager.IMPORTANCE_HIGH
+                    CHANNEL_MAX_ALTITUDE, "Max Altitude Alert", NotificationManager.IMPORTANCE_HIGH
                 ).apply {
                     description = "Alert when maximum altitude is exceeded"
+                    setSound(null, null)
                     setShowBadge(true)
-                }
-            )
+                })
         }
     }
 }
