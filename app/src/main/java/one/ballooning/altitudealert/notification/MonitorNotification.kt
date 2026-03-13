@@ -66,7 +66,8 @@ class MonitorNotification(private val context: Context) {
             NotificationCompat.Builder(context, CHANNEL_MAX_ALTITUDE)
                 .setSmallIcon(R.drawable.ic_notification_warning)
                 .setContentTitle("Maximum altitude exceeded")
-                .setContentText("Session max: %,d ft".format(state.sessionMaxFeet.toInt()))
+                .setContentText(state.sessionMaxFeet?.let { "Session max: %,d ft".format(it.toInt()) }
+                    ?: "Monitoring active")
                 .setColor(context.getColor(R.color.notification_approaching))
                 .setColorized(true)
                 .setOngoing(false)
@@ -80,6 +81,21 @@ class MonitorNotification(private val context: Context) {
                 )
                 .build()
         )
+    }
+
+    fun postGpsLostNotification() {
+        val notification = NotificationCompat.Builder(context, CHANNEL_GPS_LOST)
+            .setSmallIcon(R.drawable.ic_notification_warning)
+            .setContentTitle("GPS signal lost")
+            .setContentText("Altitude unavailable — band alerts are paused.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setOngoing(false)
+            .build()
+        manager.notify(NOTIFICATION_ID_GPS_LOST, notification)
+    }
+
+    fun cancelGpsLostNotification() {
+        manager.cancel(NOTIFICATION_ID_GPS_LOST)
     }
 
     fun cancelLiveNotification() {
@@ -110,8 +126,10 @@ class MonitorNotification(private val context: Context) {
     companion object {
         const val NOTIFICATION_ID_LIVE = 1
         const val NOTIFICATION_ID_MAX_ALTITUDE = 2
+        const val NOTIFICATION_ID_GPS_LOST = 3
         private const val CHANNEL_LIVE = "altitude_monitor"
         private const val CHANNEL_MAX_ALTITUDE = "max_altitude_alert"
+        private const val CHANNEL_GPS_LOST = "gps_lost"
 
         fun createChannels(context: Context) {
             val manager = context.getSystemService<NotificationManager>()!!
@@ -123,6 +141,16 @@ class MonitorNotification(private val context: Context) {
                 ).apply {
                     description = "Live altitude while monitoring is active"
                     setShowBadge(false)
+                }
+            )
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_GPS_LOST,
+                    "GPS Signal Lost",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Alerts when GPS signal is lost while monitoring is active"
+                    enableVibration(false)
                 }
             )
             manager.createNotificationChannel(

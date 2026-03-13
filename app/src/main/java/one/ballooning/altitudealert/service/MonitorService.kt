@@ -27,6 +27,8 @@ import one.ballooning.altitudealert.data.model.AlertConfig
 import one.ballooning.altitudealert.domain.AlertResult
 import one.ballooning.altitudealert.domain.AlertStatus
 import one.ballooning.altitudealert.domain.AltitudeMonitor
+import one.ballooning.altitudealert.domain.AltitudeSourceType
+import one.ballooning.altitudealert.domain.GpsAccuracyStatus
 import one.ballooning.altitudealert.domain.MonitorState
 import one.ballooning.altitudealert.notification.MonitorNotification
 
@@ -76,6 +78,7 @@ class MonitorService : Service() {
     private lateinit var soundPlayer: AlarmSoundPlayer
 
     private var previousBandResult: AlertResult? = null
+    private var previousGpsLost: Boolean = false
     private var lastAlertedMaxFeet: Float? = null
     private var silencedUntilMs: Long? = null
 
@@ -107,6 +110,7 @@ class MonitorService : Service() {
             combined.catch { e -> Log.e(TAG, "Flow error", e) }.collect { (state, config) ->
                 _stateFlow.value = state
                 handleBandAlerts(state, config)
+                handleGpsLost(state)
                 handleMaxAltitudeAlert(state, config)
             }
             Log.w(TAG, "Collection ended unexpectedly")
@@ -206,6 +210,25 @@ class MonitorService : Service() {
         ).show()
     }
 
+    // ─── GPS lost notification ───────────────────────────────────────────────────
+
+    private fun handleGpsLost(state: MonitorState) {
+        if (!_alertsEnabled.value) return
+
+        if (state.altitudeSource != AltitudeSourceType.GPS) {
+            previousGpsLost = false
+            return
+        }
+        val isLost = state.gpsAccuracyStatus == GpsAccuracyStatus.LOST
+        if (isLost == previousGpsLost) return
+        previousGpsLost = isLost
+        if (isLost) {
+            notification.postGpsLostNotification()
+        } else {
+            notification.cancelGpsLostNotification()
+        }
+    }
+
     // ─── Max altitude alert ───────────────────────────────────────────────────
 
     private fun handleMaxAltitudeAlert(state: MonitorState, config: AlertConfig) {
@@ -217,11 +240,12 @@ class MonitorService : Service() {
             return
         }
 
-        if (state.sessionMaxFeet < cfg.minAltitudeFeet) return
+        val sessionMax = state.sessionMaxFeet ?: return
+        if (sessionMax < cfg.minAltitudeFeet) return
         val baseline = lastAlertedMaxFeet
-        if (baseline != null && state.sessionMaxFeet <= baseline + cfg.exceedanceMarginFeet) return
+        if (baseline != null && sessionMax <= baseline + cfg.exceedanceMarginFeet) return
 
-        lastAlertedMaxFeet = state.sessionMaxFeet
+        lastAlertedMaxFeet = sessionMax
         // Always silence an alert for the next 1ßs to avoid alert spamming
         silencedUntilMs = System.currentTimeMillis() + (10 * 60 * 1000)
 

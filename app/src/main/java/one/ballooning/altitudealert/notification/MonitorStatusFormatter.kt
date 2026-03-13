@@ -30,13 +30,13 @@ object MonitorStatusFormatter {
         )
     }
 
-    private fun formatTitle(config: AlertConfig): String =
-        "Band %,d – %,d ft".format(
-            config.lowerLimitFeet.toInt(),
-            config.upperLimitFeet.toInt(),
-        )
+    private fun formatTitle(config: AlertConfig): String = "Band %,d – %,d ft".format(
+        config.lowerLimitFeet.toInt(),
+        config.upperLimitFeet.toInt(),
+    )
 
     private fun formatBody(state: MonitorState, overallStatus: AlertStatus): String {
+        if (state.gpsAccuracyStatus == GpsAccuracyStatus.LOST) return "GPS signal lost — alerts paused"
         val alt = formatAltitude(state)
         return when (overallStatus) {
             AlertStatus.CLEAR -> alt
@@ -48,29 +48,29 @@ object MonitorStatusFormatter {
     private fun formatBigText(state: MonitorState): String = buildString {
         append("Altitude: ${formatAltitude(state)}")
 
-        state.alertResult.lower
-            ?.takeIf { it.status != AlertStatus.CLEAR }
+        state.alertResult.lower?.takeIf { it.status != AlertStatus.CLEAR }
             ?.let { append("\nLower: ${limitStatusLine(it.status, it.distanceFeet)}") }
 
-        state.alertResult.upper
-            ?.takeIf { it.status != AlertStatus.CLEAR }
+        state.alertResult.upper?.takeIf { it.status != AlertStatus.CLEAR }
             ?.let { append("\nUpper: ${limitStatusLine(it.status, it.distanceFeet)}") }
 
-        append("\nMax: %,d ft".format(state.sessionMaxFeet.toInt()))
+        state.sessionMaxFeet?.let { append("\nSession max: %,d ft".format(it.toInt())) }
 
         formatSourceNote(state).takeIf { it.isNotEmpty() }?.let { append("\n$it") }
     }
 
-    private fun formatAltitude(state: MonitorState): String =
-        if (state.flightLevel != null) "FL%03d".format(state.flightLevel)
-        else "%,d ft".format(state.altitudeFeet.toInt())
+    private fun formatAltitude(state: MonitorState): String = when {
+        state.gpsAccuracyStatus == GpsAccuracyStatus.LOST -> "GPS lost"
+        state.altitudeFeet == null -> "– – –"
+        state.flightLevel != null -> "FL%03d".format(state.flightLevel)
+        else -> "%,d ft".format(state.altitudeFeet.toInt())
+    }
 
-    private fun limitStatusLine(status: AlertStatus, distanceFeet: Float): String =
-        when (status) {
-            AlertStatus.CLEAR -> "%,d ft".format(distanceFeet.toInt())
-            AlertStatus.APPROACHING -> "Approaching — %,d ft away".format(distanceFeet.toInt())
-            AlertStatus.CROSSED -> "⚠ Crossed"
-        }
+    private fun limitStatusLine(status: AlertStatus, distanceFeet: Float): String = when (status) {
+        AlertStatus.CLEAR -> "%,d ft".format(distanceFeet.toInt())
+        AlertStatus.APPROACHING -> "Approaching — %,d ft away".format(distanceFeet.toInt())
+        AlertStatus.CROSSED -> "⚠ Crossed"
+    }
 
     private fun formatSourceNote(state: MonitorState): String {
         if (state.altitudeSource != AltitudeSourceType.GPS) return ""

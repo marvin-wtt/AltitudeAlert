@@ -12,7 +12,8 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.scan
 import kotlin.math.max
 
-
+// Pure domain class — no Android imports, no DI annotations.
+// Receives its inputs as constructor parameters so it is trivially testable.
 class AltitudeMonitor(
     private val readings: Flow<AltitudeReading>,
     private val config: Flow<AlertConfig>,
@@ -22,17 +23,18 @@ class AltitudeMonitor(
     fun monitorState(): Flow<MonitorState> =
         combine(readings, config, alertsEnabled) { reading, cfg, enabled ->
             Triple(
-                reading, cfg, enabled
+                reading,
+                cfg,
+                enabled
             )
-        }.scan<Triple<AltitudeReading, AlertConfig, Boolean>, MonitorState?>(null) { prev, (reading, cfg, enabled) ->
+        }
+            .scan<Triple<AltitudeReading, AlertConfig, Boolean>, MonitorState?>(null) { prev, (reading, cfg, enabled) ->
                 val sourceType = resolvedSource(reading, cfg)
                 val altitudeFeet = deriveAltitudeFeet(reading, sourceType, cfg)
                 MonitorState(
                     altitudeFeet = altitudeFeet,
-                    sessionMaxFeet = if (prev == null) altitudeFeet else max(
-                        prev.sessionMaxFeet, altitudeFeet
-                    ),
-                    flightLevel = deriveFlightLevel(reading),
+                    sessionMaxFeet = maxOfNullable(prev?.sessionMaxFeet, altitudeFeet),
+                    flightLevel = deriveFlightLevel(reading, cfg),
                     alertResult = engine.evaluate(altitudeFeet, cfg, enabled),
                     altitudeSource = sourceType,
                     gpsAccuracyStatus = deriveGpsAccuracyStatus(reading, sourceType),
@@ -42,7 +44,8 @@ class AltitudeMonitor(
                         )
                     },
                 )
-            }.filterNotNull()
+            }
+            .filterNotNull()
 
     private fun resolvedSource(reading: AltitudeReading, cfg: AlertConfig): AltitudeSourceType =
         when {
@@ -55,15 +58,17 @@ class AltitudeMonitor(
         reading: AltitudeReading,
         sourceType: AltitudeSourceType,
         cfg: AlertConfig,
-    ): Float = when (sourceType) {
-        AltitudeSourceType.BAROMETER -> pressureToAltitudeFeet(reading.pressureHpa!!, cfg.qnhHpa)
+    ): Float? = when (sourceType) {
+        AltitudeSourceType.BAROMETER ->
+            pressureToAltitudeFeet(reading.pressureHpa!!, cfg.qnhHpa)
 
-        AltitudeSourceType.GPS -> reading.gpsAltitudeMetres?.let { metresToFeet(it) }
-            ?: reading.pressureHpa?.let { pressureToAltitudeFeet(it, cfg.qnhHpa) }
-            ?: error("No altitude available")
+        AltitudeSourceType.GPS ->
+            // No fallback to barometer — a silent source switch would change the reading
+            // without the user knowing, and could mask a genuine GPS outage.
+            reading.gpsAltitudeMetres?.let { metresToFeet(it) }
     }
 
-    private fun deriveFlightLevel(reading: AltitudeReading): Int? {
+    private fun deriveFlightLevel(reading: AltitudeReading, cfg: AlertConfig): Int? {
         return reading.pressureHpa?.let { pressureToFlightLevel(it) }
     }
 
@@ -74,12 +79,20 @@ class AltitudeMonitor(
         sourceType != AltitudeSourceType.GPS -> GpsAccuracyStatus.NOT_APPLICABLE
         reading.gpsAltitudeMetres == null -> GpsAccuracyStatus.LOST
         reading.gpsVerticalAccuracyMetres == null -> GpsAccuracyStatus.GOOD
-        metresToFeet(reading.gpsVerticalAccuracyMetres) > GPS_LOW_ACCURACY_THRESHOLD_FEET -> GpsAccuracyStatus.LOW
+        metresToFeet(reading.gpsVerticalAccuracyMetres) > GPS_LOW_ACCURACY_THRESHOLD_FEET
+            -> GpsAccuracyStatus.LOW
 
         else -> GpsAccuracyStatus.GOOD
     }
 
     companion object {
         private const val GPS_LOW_ACCURACY_THRESHOLD_FEET = 100f
+
+        /** Like max() but treats null as "no value yet" rather than 0. */
+        private fun maxOfNullable(a: Float?, b: Float?): Float? = when {
+            a == null -> b
+            b == null -> a
+            else -> max(a, b)
+        }
     }
 }

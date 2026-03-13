@@ -18,7 +18,6 @@ data class AlertResult(
             ?: AlertStatus.CLEAR
 }
 
-
 enum class GpsAccuracyStatus {
     NOT_APPLICABLE,
     GOOD,
@@ -26,13 +25,11 @@ enum class GpsAccuracyStatus {
     LOST,
 }
 
-
 enum class AltitudeSourceType { BAROMETER, GPS }
 
-
 data class MonitorState(
-    val altitudeFeet: Float,
-    val sessionMaxFeet: Float,
+    val altitudeFeet: Float?,
+    val sessionMaxFeet: Float?,
     val flightLevel: Int?,
     val alertResult: AlertResult,
     val altitudeSource: AltitudeSourceType,

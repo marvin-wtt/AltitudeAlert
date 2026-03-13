@@ -10,10 +10,7 @@ import one.ballooning.altitudealert.data.source.FusedAltitudeDataSource
 /**
  * Task list
  * TODO Validate Barometer against GPS
- * TODO Alert when GPS is list
- * TODO Merge Altitude and flight levels
  * TODO Set QHN to standard for flight levels
- * TODO Order settings page
  * TODO Update max altitude style
  * TODO Show in UI when altitude max alerts are silenced
  */
