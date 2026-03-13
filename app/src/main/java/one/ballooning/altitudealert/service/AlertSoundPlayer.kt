@@ -12,35 +12,30 @@ class AlarmSoundPlayer(private val scope: CoroutineScope) {
 
     private val toneGen = ToneGenerator(AudioManager.STREAM_ALARM, VOLUME)
     private var crossingJob: Job? = null
+    private var maxAltitudeJob: Job? = null
+
+    // ── One-shot ──────────────────────────────────────────────────────────────
 
     fun playThreshold() {
         scope.launch {
             repeat(3) {
                 toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, BEEP_MS.toInt())
-                delay(BEEP_GAP_MS * 3)
+                delay(BEEP_MS + BEEP_GAP_MS)
             }
         }
     }
 
-    fun playMaxAltitude() {
-        scope.launch {
-            toneGen.startTone(ToneGenerator.TONE_CDMA_HIGH_SS, MAX_ALTITUDE_TONE_MS.toInt())
-            delay(MAX_ALTITUDE_TONE_MS + BEEP_GAP_MS)
-            toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, MAX_ALTITUDE_TONE_MS.toInt())
-        }
-    }
-
+    // ── Crossing alarm (band limit exceeded) ──────────────────────────────────
     fun startCrossing() {
         if (crossingJob?.isActive == true) return
+        if (maxAltitudeJob?.isActive == true) return   // no parallel alarms
         crossingJob = scope.launch {
             while (isActive) {
-                // High pair
                 repeat(2) {
                     toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, BEEP_MS.toInt())
                     delay(BEEP_MS + BEEP_GAP_MS)
                 }
                 delay(PAIR_GAP_MS)
-                // Low pair
                 repeat(2) {
                     toneGen.startTone(ToneGenerator.TONE_CDMA_LOW_SS, BEEP_MS.toInt())
                     delay(BEEP_MS + BEEP_GAP_MS)
@@ -56,16 +51,44 @@ class AlarmSoundPlayer(private val scope: CoroutineScope) {
         toneGen.stopTone()
     }
 
+    val isCrossingActive: Boolean get() = crossingJob?.isActive == true
+
+    // ── Max altitude alarm ────────────────────────────────────────────────────
+
+    fun startMaxAltitude() {
+        if (maxAltitudeJob?.isActive == true) return
+        if (crossingJob?.isActive == true) return      // no parallel alarms
+        maxAltitudeJob = scope.launch {
+            while (isActive) {
+                repeat(3) {
+                    toneGen.startTone(ToneGenerator.TONE_CDMA_HIGH_SS, BEEP_MS.toInt())
+                    delay(BEEP_MS + BEEP_GAP_MS)
+                }
+                delay(MAX_ALTITUDE_GAP_MS)
+            }
+        }
+    }
+    fun stopMaxAltitude() {
+        maxAltitudeJob?.cancel()
+        maxAltitudeJob = null
+        toneGen.stopTone()
+    }
+
+    val isMaxAltitudeActive: Boolean get() = maxAltitudeJob?.isActive == true
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+
     fun release() {
         stopCrossing()
+        stopMaxAltitude()
         toneGen.release()
     }
 
     companion object {
-        private const val VOLUME = 100   // ToneGenerator max is 100
-        private const val BEEP_MS = 160L  // duration of each beep
-        private const val BEEP_GAP_MS = 80L   // silence between beeps in a pair
-        private const val PAIR_GAP_MS = 350L  // silence between high and low pairs
-        private const val MAX_ALTITUDE_TONE_MS = 400L  // duration of each max altitude tone
+        private const val VOLUME             = 100    // ToneGenerator max
+        private const val BEEP_MS            = 160L   // duration of each beep
+        private const val BEEP_GAP_MS        = 80L    // gap between beeps in a pair
+        private const val PAIR_GAP_MS        = 350L   // gap between pairs (crossing)
+        private const val MAX_ALTITUDE_GAP_MS = 700L  // pause between max altitude triple-beep cycles
     }
 }

@@ -3,16 +3,17 @@ package one.ballooning.altitudealert.service
 import android.app.Service
 import android.content.Intent
 import android.os.Binder
+import android.os.Build
 import android.os.IBinder
+import android.media.AudioAttributes
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
-import android.widget.Toast
 import androidx.core.content.getSystemService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,11 +42,13 @@ class MonitorService : Service() {
         val stateFlow: StateFlow<MonitorState?> get() = _stateFlow.asStateFlow()
         val crossingMutedFlow: StateFlow<Boolean> get() = _crossingMuted.asStateFlow()
         val alertsEnabledFlow: StateFlow<Boolean> get() = _alertsEnabled.asStateFlow()
+        val maxAltitudeSilencedFlow: StateFlow<Boolean> get() = _maxAltitudeSilenced.asStateFlow()
+        val maxAltitudeAlarmActiveFlow: StateFlow<Boolean> get() = _maxAltitudeAlarmActive.asStateFlow()
+        val maxAltitudeAlarmTimestampMsFlow: StateFlow<Long?> get() = _maxAltitudeAlarmTimestampMs.asStateFlow()
+
         fun setAlertsEnabled(enabled: Boolean) {
             _alertsEnabled.value = enabled
             if (enabled) {
-                // Explicitly start the service so it survives the app going to background.
-                // BIND_AUTO_CREATE alone would let Android kill it when the activity unbinds.
                 applicationContext.startService(
                     Intent(applicationContext, MonitorService::class.java)
                 )
@@ -54,13 +57,16 @@ class MonitorService : Service() {
                 )
             } else {
                 resetCrossingAlarm()
+                stopMaxAltitudeAlarm()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
         }
 
-        fun muteAlarm() {
-            muteCrossingAlarm()
+        fun muteAlarm() = muteCrossingAlarm()
+        fun acknowledgeMaxAltitude() = this@MonitorService.acknowledgeMaxAltitude()
+        fun unsilenceMaxAltitude() {
+            _maxAltitudeSilenced.value = false
         }
     }
 
@@ -73,6 +79,11 @@ class MonitorService : Service() {
     private val _alertsEnabled = MutableStateFlow(false)
     private val _crossingMuted = MutableStateFlow(false)
 
+    // Max altitude alarm starts silenced — avoids a false alarm on first fix.
+    private val _maxAltitudeSilenced = MutableStateFlow(true)
+    private val _maxAltitudeAlarmActive = MutableStateFlow(false)
+    private val _maxAltitudeAlarmTimestampMs = MutableStateFlow<Long?>(null)
+
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private lateinit var notification: MonitorNotification
@@ -80,8 +91,6 @@ class MonitorService : Service() {
 
     private var previousBandResult: AlertResult? = null
     private var previousGpsLost: Boolean = false
-    private var lastAlertedMaxFeet: Float? = null
-    private var silencedUntilMs: Long? = null
 
     private val vibrator: Vibrator by lazy {
        getSystemService<VibratorManager>()!!.defaultVibrator
@@ -89,7 +98,6 @@ class MonitorService : Service() {
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────
 
-    @OptIn(FlowPreview::class)
     override fun onCreate() {
         super.onCreate()
         val app = application as AltitudeAlertApplication
@@ -104,8 +112,6 @@ class MonitorService : Service() {
 
         MonitorNotification.createChannels(applicationContext)
 
-        // Cache the latest config so alert/notification handlers can read it without
-        // re-combining — avoids an extra flow hop on every barometer/GPS emission.
         val latestConfig = app.configRepository.configFlow
             .stateIn(scope, SharingStarted.Eagerly, AlertConfig())
 
@@ -119,7 +125,6 @@ class MonitorService : Service() {
                     handleGpsLost(state)
                     handleMaxAltitudeAlert(state, config)
                 }
-            Log.w(TAG, "Collection ended unexpectedly")
         }
 
         scope.launch {
@@ -135,17 +140,12 @@ class MonitorService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_MUTE_CROSSING -> muteCrossingAlarm()
-            ACTION_SILENCE_MAX_ALTITUDE -> {
-                val minutes = intent.getIntExtra(EXTRA_SILENCE_MINUTES, 5)
-                silenceMaxAltitudeAlarm(minutes)
-            }
+            ACTION_ACKNOWLEDGE_MAX_ALTITUDE -> acknowledgeMaxAltitude()
         }
         return START_STICKY
     }
 
     override fun onUnbind(intent: Intent): Boolean {
-        // If alerts are off when the app closes, there's nothing to keep alive.
-        // If alerts are on, the service was explicitly started and stays running.
         if (!_alertsEnabled.value) stopSelf()
         return false
     }
@@ -153,8 +153,6 @@ class MonitorService : Service() {
     override fun onDestroy() {
         scope.cancel()
         soundPlayer.release()
-        // If alerts are off the notification was never meant to persist — cancel it.
-        // When alerts are on, stopForeground already removed it before stopSelf was called.
         if (!_alertsEnabled.value) notification.cancelLiveNotification()
         super.onDestroy()
     }
@@ -171,25 +169,23 @@ class MonitorService : Service() {
         val prevOverall = previous?.overallStatus ?: AlertStatus.CLEAR
         val currOverall = current.overallStatus
 
-        // Reset mute when altitude re-enters the band
         if (currOverall == AlertStatus.CLEAR && _crossingMuted.value) {
             _crossingMuted.value = false
         }
 
         when {
-            // Newly crossed — start continuous alarm unless muted
             currOverall == AlertStatus.CROSSED && prevOverall != AlertStatus.CROSSED -> {
                 if (!_crossingMuted.value) {
                     if (config.soundEnabled) soundPlayer.startCrossing()
                     if (config.vibrateEnabled) startCrossingVibration()
                 }
             }
-            // Was crossing, now only approaching — stop alarm
+
             currOverall != AlertStatus.CROSSED && prevOverall == AlertStatus.CROSSED -> {
                 soundPlayer.stopCrossing()
                 stopCrossingVibration()
             }
-            // Newly approaching from clear
+
             currOverall == AlertStatus.APPROACHING && prevOverall == AlertStatus.CLEAR -> {
                 if (config.thresholdAlertEnabled) {
                     if (config.soundEnabled) soundPlayer.playThreshold()
@@ -211,20 +207,10 @@ class MonitorService : Service() {
         _crossingMuted.value = false
     }
 
-    private fun silenceMaxAltitudeAlarm(minutes: Int) {
-        silencedUntilMs = System.currentTimeMillis() + minutes * 60_000L
-        lastAlertedMaxFeet = _stateFlow.value?.sessionMaxFeet
-        notification.cancelMaxAltitudeNotification()
-        Toast.makeText(
-            this, "Max altitude alert silenced for $minutes min", Toast.LENGTH_SHORT
-        ).show()
-    }
-
-    // ─── GPS lost notification ───────────────────────────────────────────────────
+    // ─── GPS lost notification ────────────────────────────────────────────────
 
     private fun handleGpsLost(state: MonitorState) {
         if (!_alertsEnabled.value || state.altitudeSource != AltitudeSourceType.GPS) {
-            // If alerts are off, cancel any lingering notification and reset state.
             if (previousGpsLost) {
                 notification.cancelGpsLostNotification()
                 previousGpsLost = false
@@ -234,37 +220,79 @@ class MonitorService : Service() {
         val isLost = state.gpsAccuracyStatus == GpsAccuracyStatus.LOST
         if (isLost == previousGpsLost) return
         previousGpsLost = isLost
-        if (isLost) {
-            notification.postGpsLostNotification()
-        } else {
-            notification.cancelGpsLostNotification()
-        }
+        if (isLost) notification.postGpsLostNotification()
+        else notification.cancelGpsLostNotification()
     }
 
-    // ─── Max altitude alert ───────────────────────────────────────────────────
+    // ─── Max altitude alarm ───────────────────────────────────────────────────
 
     private fun handleMaxAltitudeAlert(state: MonitorState, config: AlertConfig) {
         val cfg = config.maxAltitude
-
-        val isSilenced = silencedUntilMs?.let { it > System.currentTimeMillis() } ?: false
-        if (!_alertsEnabled.value || !cfg.enabled || isSilenced) {
-            lastAlertedMaxFeet = state.sessionMaxFeet
+        if (!cfg.enabled) {
+            if (_maxAltitudeAlarmActive.value) stopMaxAltitudeAlarm()
             return
         }
 
+        val currentAlt = state.altitudeFeet ?: return
         val sessionMax = state.sessionMaxFeet ?: return
-        if (sessionMax < cfg.minAltitudeFeet) return
-        val baseline = lastAlertedMaxFeet
-        if (baseline != null && sessionMax <= baseline + cfg.exceedanceMarginFeet) return
 
-        lastAlertedMaxFeet = sessionMax
-        // Always silence an alert for the next 1ßs to avoid alert spamming
-        silencedUntilMs = System.currentTimeMillis() + (10 * 60 * 1000)
+        val alertAltitude = sessionMax - cfg.alertThresholdFeet
+        val reactivationAltitude = sessionMax - cfg.reactivationThresholdFeet
+
+        // Lift silence when balloon has descended far enough below the max
+        if (_maxAltitudeSilenced.value && !_maxAltitudeAlarmActive.value &&
+            currentAlt <= reactivationAltitude
+        ) {
+            _maxAltitudeSilenced.value = false
+        }
+
+        if (!_alertsEnabled.value) {
+            if (_maxAltitudeAlarmActive.value) stopMaxAltitudeAlarm()
+            return
+        }
+
+        // Trigger alarm when not silenced and altitude reaches the alert altitude
+        if (!_maxAltitudeSilenced.value && !_maxAltitudeAlarmActive.value &&
+            currentAlt >= alertAltitude
+        ) {
+            startMaxAltitudeAlarm(state, config)
+        }
+    }
+
+    private fun startMaxAltitudeAlarm(state: MonitorState, config: AlertConfig) {
+        _maxAltitudeAlarmActive.value = true
+        _maxAltitudeAlarmTimestampMs.value = System.currentTimeMillis()
+
+        // Post notification (always)
+        val cfg = config.maxAltitude
+        val alertAlt = (state.sessionMaxFeet ?: 0f) - cfg.alertThresholdFeet
+        notification.postMaxAltitudeAlarmNotification(state.sessionMaxFeet, alertAlt)
+
+        // Sound and vibration only if no other continuous alarm is already running
+        if (!soundPlayer.isCrossingActive) {
+            if (config.soundEnabled) soundPlayer.startMaxAltitude()
+            if (config.vibrateEnabled) startCrossingVibration()
+        }
+    }
+
+    private fun acknowledgeMaxAltitude() {
+        if (!_maxAltitudeAlarmActive.value) return
+        _maxAltitudeAlarmActive.value = false
+        _maxAltitudeSilenced.value = true
+
+        soundPlayer.stopMaxAltitude()
+        // Only cancel vibration if the crossing alarm is not also running
+        if (!soundPlayer.isCrossingActive) stopCrossingVibration()
 
         notification.cancelMaxAltitudeNotification()
-        notification.postMaxAltitudeNotification(state, cfg.silenceDurationMinutes)
-        if (config.vibrateEnabled) vibrate(AlertStatus.APPROACHING)
-        if (config.soundEnabled) soundPlayer.playMaxAltitude()
+    }
+
+    private fun stopMaxAltitudeAlarm() {
+        if (!_maxAltitudeAlarmActive.value) return
+        _maxAltitudeAlarmActive.value = false
+        soundPlayer.stopMaxAltitude()
+        if (!soundPlayer.isCrossingActive) stopCrossingVibration()
+        notification.cancelMaxAltitudeNotification()
     }
 
     // ─── Vibration ────────────────────────────────────────────────────────────
@@ -273,24 +301,31 @@ class MonitorService : Service() {
         val pattern = when (status) {
             AlertStatus.CLEAR -> return
             AlertStatus.APPROACHING -> VIBRATE_SHORT
-            AlertStatus.CROSSED -> return  // handled by startCrossingVibration
+            AlertStatus.CROSSED -> return
         }
-        vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
+        vibrateWithAlarmPriority(VibrationEffect.createWaveform(pattern, -1))
     }
 
     private fun startCrossingVibration() {
-        vibrator.vibrate(VibrationEffect.createWaveform(VIBRATE_CROSSING_CYCLE, 0))
+        vibrateWithAlarmPriority(VibrationEffect.createWaveform(VIBRATE_CROSSING_CYCLE, 0))
     }
 
     private fun stopCrossingVibration() {
         vibrator.cancel()
     }
 
+    private fun vibrateWithAlarmPriority(effect: VibrationEffect) {
+        vibrator.vibrate(
+            effect,
+            VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM),
+        )
+    }
+
     companion object {
         private const val TAG = "MonitorService"
         const val ACTION_MUTE_CROSSING = "one.ballooning.altitudealert.MUTE_CROSSING"
-        const val ACTION_SILENCE_MAX_ALTITUDE = "one.ballooning.altitudealert.SILENCE_MAX_ALTITUDE"
-        const val EXTRA_SILENCE_MINUTES = "silence_minutes"
+        const val ACTION_ACKNOWLEDGE_MAX_ALTITUDE =
+            "one.ballooning.altitudealert.ACKNOWLEDGE_MAX_ALTITUDE"
         private val VIBRATE_SHORT = longArrayOf(0, 150, 100, 150)
         private val VIBRATE_CROSSING_CYCLE = longArrayOf(0, 400, 200, 400, 200, 400)
         private const val NOTIFICATION_UPDATE_INTERVAL_MS = 500L

@@ -7,9 +7,8 @@ enum class PreferredSource { BAROMETER, GPS }
 @Serializable
 data class MaxAltitudeConfig(
     val enabled: Boolean = true,
-    val exceedanceMarginFeet: Float = 100f,
-    val minAltitudeFeet: Float = 1000f,
-    val silenceDurationMinutes: Int = 5,
+    val alertThresholdFeet: Float = 1000f,
+    val reactivationThresholdFeet: Float = 2000f,
 )
 
 @Serializable

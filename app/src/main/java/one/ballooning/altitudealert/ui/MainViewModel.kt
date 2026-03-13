@@ -73,9 +73,12 @@ data class MainUiState(
     val warnOnLowAccuracy: Boolean = true,
 
     val maxAltitudeEnabled: Boolean = false,
-    val maxAltitudeThresholdFeet: String = "50",
-    val maxAltitudeMinAltitudeFeet: String = "500",
-    val maxAltitudeSilenceMinutes: String = "5",
+    val maxAltitudeAlertThresholdFeet: String = "1000",
+    val maxAltitudeReactivationThresholdFeet: String = "2000",
+    // Runtime state synced from service
+    val maxAltitudeAlarmActive: Boolean = false,
+    val maxAltitudeSilenced: Boolean = true,
+    val maxAltitudeAlarmTimestampMs: Long? = null,
 
     val liveStatus: LiveAltitudeStatus = LiveAltitudeStatus(),
 ) {
@@ -100,14 +103,15 @@ data class MainUiState(
         get() = Validators.bandUpper(bandUpperAltitudeFeet, bandLowerAltitudeFeet)
     val approachThresholdValidation: ValidationResult
         get() = Validators.approachThreshold(approachThresholdFeet)
-    val maxAltitudeThresholdValidation: ValidationResult
-        get() = if (maxAltitudeEnabled) Validators.maxAltitudeThreshold(maxAltitudeThresholdFeet)
+    val maxAltitudeAlertThresholdValidation: ValidationResult
+        get() = if (maxAltitudeEnabled) Validators.maxAltitudeThreshold(
+            maxAltitudeAlertThresholdFeet
+        )
         else ValidationResult.Valid
-    val maxAltitudeMinAltitudeValidation: ValidationResult
-        get() = if (maxAltitudeEnabled) Validators.maxAltitudeMinAltitude(maxAltitudeMinAltitudeFeet)
-        else ValidationResult.Valid
-    val maxAltitudeSilenceValidation: ValidationResult
-        get() = if (maxAltitudeEnabled) Validators.silenceMinutes(maxAltitudeSilenceMinutes)
+    val maxAltitudeReactivationThresholdValidation: ValidationResult
+        get() = if (maxAltitudeEnabled) Validators.maxAltitudeThreshold(
+            maxAltitudeReactivationThresholdFeet
+        )
         else ValidationResult.Valid
     val isConfigValid: Boolean
         get() = listOf(
@@ -115,9 +119,8 @@ data class MainUiState(
             bandLowerAltitudeValidation,
             bandUpperAltitudeValidation,
             approachThresholdValidation,
-            maxAltitudeThresholdValidation,
-            maxAltitudeMinAltitudeValidation,
-            maxAltitudeSilenceValidation,
+            maxAltitudeAlertThresholdValidation,
+            maxAltitudeReactivationThresholdValidation,
         ).all { it.isValid }
 }
 
@@ -175,6 +178,21 @@ class MainViewModel(
                     _uiState.update { it.copy(crossingAlarmMuted = muted) }
                 }
             }
+            viewModelScope.launch {
+                monitorBinder?.maxAltitudeSilencedFlow?.collect { silenced ->
+                    _uiState.update { it.copy(maxAltitudeSilenced = silenced) }
+                }
+            }
+            viewModelScope.launch {
+                monitorBinder?.maxAltitudeAlarmActiveFlow?.collect { active ->
+                    _uiState.update { it.copy(maxAltitudeAlarmActive = active) }
+                }
+            }
+            viewModelScope.launch {
+                monitorBinder?.maxAltitudeAlarmTimestampMsFlow?.collect { ts ->
+                    _uiState.update { it.copy(maxAltitudeAlarmTimestampMs = ts) }
+                }
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
@@ -211,6 +229,8 @@ class MainViewModel(
             MainAction.RequestPermissions -> Unit
             MainAction.OpenAppSettings -> Unit
             MainAction.MuteAlarm -> monitorBinder?.muteAlarm()
+            MainAction.AcknowledgeMaxAltitude -> monitorBinder?.acknowledgeMaxAltitude()
+            MainAction.UnsilenceMaxAltitude -> monitorBinder?.unsilenceMaxAltitude()
             is MainAction.SetPreferredSource -> updateAndPersist { it.copy(preferredSource = action.source) }
             is MainAction.UpdateBandLowerAltitude -> {
                 _uiState.update { it.copy(bandLowerAltitudeFeet = action.value) }
@@ -256,19 +276,14 @@ class MainViewModel(
             is AdvancedAction.SetMaxAltitudeAlertEnabled ->
                 updateAndPersist { it.copy(maxAltitudeEnabled = action.enabled) }
 
-            is AdvancedAction.UpdateMaxAltitudeThreshold -> {
-                _uiState.update { it.copy(maxAltitudeThresholdFeet = action.value) }
+            is AdvancedAction.UpdateMaxAltitudeAlertThreshold -> {
+                _uiState.update { it.copy(maxAltitudeAlertThresholdFeet = action.value) }
                 if (action.value.toFloatOrNull() != null) persistIfValid()
             }
 
-            is AdvancedAction.UpdateMaxAltitudeMinAltitude -> {
-                _uiState.update { it.copy(maxAltitudeMinAltitudeFeet = action.value) }
+            is AdvancedAction.UpdateMaxAltitudeReactivationThreshold -> {
+                _uiState.update { it.copy(maxAltitudeReactivationThresholdFeet = action.value) }
                 if (action.value.toFloatOrNull() != null) persistIfValid()
-            }
-
-            is AdvancedAction.UpdateMaxAltitudeSilenceMinutes -> {
-                _uiState.update { it.copy(maxAltitudeSilenceMinutes = action.value) }
-                if (action.value.toIntOrNull() != null) persistIfValid()
             }
         }
     }
@@ -313,9 +328,8 @@ class MainViewModel(
                 s.bandUpperAltitudeFeet.toFloatOrNull() != null &&
                 s.qnhHpa.toFloatOrNull() != null &&
                 s.approachThresholdFeet.toFloatOrNull() != null &&
-                s.maxAltitudeThresholdFeet.toFloatOrNull() != null &&
-                s.maxAltitudeMinAltitudeFeet.toFloatOrNull() != null &&
-                s.maxAltitudeSilenceMinutes.toIntOrNull() != null
+                s.maxAltitudeAlertThresholdFeet.toFloatOrNull() != null &&
+                s.maxAltitudeReactivationThresholdFeet.toFloatOrNull() != null
         if (allParseable) viewModelScope.launch { configRepository.save(buildConfig(s)) }
     }
 
@@ -327,9 +341,9 @@ class MainViewModel(
         approachThresholdFeet = s.approachThresholdFeet.toFloatOrNull() ?: 200f,
         maxAltitude = MaxAltitudeConfig(
             enabled = s.maxAltitudeEnabled,
-            exceedanceMarginFeet = s.maxAltitudeThresholdFeet.toFloatOrNull() ?: 50f,
-            minAltitudeFeet = s.maxAltitudeMinAltitudeFeet.toFloatOrNull() ?: 500f,
-            silenceDurationMinutes = s.maxAltitudeSilenceMinutes.toIntOrNull() ?: 5,
+            alertThresholdFeet = s.maxAltitudeAlertThresholdFeet.toFloatOrNull() ?: 200f,
+            reactivationThresholdFeet = s.maxAltitudeReactivationThresholdFeet.toFloatOrNull()
+                ?: 500f,
         ),
         thresholdAlertEnabled = s.thresholdAlertEnabled,
         soundEnabled = s.soundEnabled,
@@ -338,16 +352,16 @@ class MainViewModel(
 
     private fun applyConfigToUiState(current: MainUiState, config: AlertConfig): MainUiState =
         current.copy(
-            // alertsEnabled is intentionally not restored — alerts always start off.
             preferredSource = config.preferredSource,
             bandLowerAltitudeFeet = config.lowerLimitFeet.toInt().toString(),
             bandUpperAltitudeFeet = config.upperLimitFeet.toInt().toString(),
             qnhHpa = config.qnhHpa.toInt().toString(),
             approachThresholdFeet = config.approachThresholdFeet.toInt().toString(),
             maxAltitudeEnabled = config.maxAltitude.enabled,
-            maxAltitudeThresholdFeet = config.maxAltitude.exceedanceMarginFeet.toInt().toString(),
-            maxAltitudeMinAltitudeFeet = config.maxAltitude.minAltitudeFeet.toInt().toString(),
-            maxAltitudeSilenceMinutes = config.maxAltitude.silenceDurationMinutes.toString(),
+            maxAltitudeAlertThresholdFeet = config.maxAltitude.alertThresholdFeet.toInt()
+                .toString(),
+            maxAltitudeReactivationThresholdFeet = config.maxAltitude.reactivationThresholdFeet.toInt()
+                .toString(),
             thresholdAlertEnabled = config.thresholdAlertEnabled,
             soundEnabled = config.soundEnabled,
             vibrateEnabled = config.vibrateEnabled,

@@ -8,6 +8,8 @@ sealed class MainAction {
     object RequestPermissions : MainAction()
     object OpenAppSettings : MainAction()
     object MuteAlarm : MainAction()
+    object AcknowledgeMaxAltitude : MainAction()
+    object UnsilenceMaxAltitude : MainAction()
     data class SetPreferredSource(val source: PreferredSource) : MainAction()
     data class UpdateBandLowerAltitude(val value: String) : MainAction()
     data class UpdateBandUpperAltitude(val value: String) : MainAction()
@@ -22,7 +24,6 @@ sealed class AdvancedAction {
     data class SetVibrateEnabled(val enabled: Boolean) : AdvancedAction()
     data class SetWarnOnLowAccuracy(val enabled: Boolean) : AdvancedAction()
     data class SetMaxAltitudeAlertEnabled(val enabled: Boolean) : AdvancedAction()
-    data class UpdateMaxAltitudeThreshold(val value: String) : AdvancedAction()
-    data class UpdateMaxAltitudeMinAltitude(val value: String) : AdvancedAction()
-    data class UpdateMaxAltitudeSilenceMinutes(val value: String) : AdvancedAction()
+    data class UpdateMaxAltitudeAlertThreshold(val value: String) : AdvancedAction()
+    data class UpdateMaxAltitudeReactivationThreshold(val value: String) : AdvancedAction()
 }

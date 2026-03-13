@@ -53,7 +53,7 @@ fun AdvancedSettingsScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         ApproachAlertCard(uiState, onAction)
-                        MaxAltitudeAlertCard(uiState, onAction)
+                        CrossingAlarmCard(uiState, onAction)
                     }
                     Column(
                         modifier = Modifier
@@ -61,7 +61,7 @@ fun AdvancedSettingsScreen(
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        AlarmCard(uiState, onAction)
+                        MaxAltitudeAlertCard(uiState, onAction)
                         DiagnosticsCard(uiState, onAction)
                     }
                 }
@@ -74,8 +74,8 @@ fun AdvancedSettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     ApproachAlertCard(uiState, onAction)
+                    CrossingAlarmCard(uiState, onAction)
                     MaxAltitudeAlertCard(uiState, onAction)
-                    AlarmCard(uiState, onAction)
                     DiagnosticsCard(uiState, onAction)
                 }
             }
@@ -94,7 +94,7 @@ private fun ApproachAlertCard(uiState: MainUiState, onAction: (AdvancedAction) -
         ) {
             Text("Approach alert", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Alert when the altitude comes within the threshold distance of a band edge.",
+                "Three beeps when the altitude comes within the threshold distance of a band edge.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -126,23 +126,29 @@ private fun ApproachAlertCard(uiState: MainUiState, onAction: (AdvancedAction) -
 // ─── Crossing alarm card ──────────────────────────────────────────────────────
 
 @Composable
-private fun AlarmCard(uiState: MainUiState, onAction: (AdvancedAction) -> Unit) {
+private fun CrossingAlarmCard(uiState: MainUiState, onAction: (AdvancedAction) -> Unit) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("Alarms", style = MaterialTheme.typography.titleMedium)
+            Text("Crossing alarm", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "A continuous two-tone alarm sounds when the altitude exceeds the band limit. " +
+                        "Mute it from the notification or the main screen. " +
+                        "The alarm resets automatically when the altitude returns inside the band.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            HorizontalDivider()
             SwitchRow(
                 label = "Sound",
                 checked = uiState.soundEnabled,
-                enabled = uiState.vibrateEnabled,
                 onCheckedChange = { onAction(AdvancedAction.SetSoundEnabled(it)) },
             )
             SwitchRow(
                 label = "Vibration",
                 checked = uiState.vibrateEnabled,
-                enabled = uiState.soundEnabled,
                 onCheckedChange = { onAction(AdvancedAction.SetVibrateEnabled(it)) },
             )
         }
@@ -160,7 +166,9 @@ private fun MaxAltitudeAlertCard(uiState: MainUiState, onAction: (AdvancedAction
         ) {
             Text("Max altitude alert", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Alert when the maximum altitude increases by the exceedance margin.",
+                "Continuous alarm when the balloon nears its maximum altitude. " +
+                        "Alarm fires when within the alert threshold of the session max, " +
+                        "and re-arms after descending below the reactivation threshold.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -170,44 +178,36 @@ private fun MaxAltitudeAlertCard(uiState: MainUiState, onAction: (AdvancedAction
                 onCheckedChange = { onAction(AdvancedAction.SetMaxAltitudeAlertEnabled(it)) },
             )
             if (uiState.maxAltitudeEnabled) {
-                val threshV = uiState.maxAltitudeThresholdValidation
+                val alertV = uiState.maxAltitudeAlertThresholdValidation
                 OutlinedTextField(
-                    value = uiState.maxAltitudeThresholdFeet,
-                    onValueChange = { onAction(AdvancedAction.UpdateMaxAltitudeThreshold(it)) },
-                    label = { Text("Exceedance margin (ft)") },
+                    value = uiState.maxAltitudeAlertThresholdFeet,
+                    onValueChange = { onAction(AdvancedAction.UpdateMaxAltitudeAlertThreshold(it)) },
+                    label = { Text("Alert threshold (ft below max)") },
                     singleLine = true,
-                    isError = !threshV.isValid,
-                    supportingText = threshV.errorMessage?.let { { Text(it) } },
+                    isError = !alertV.isValid,
+                    supportingText = alertV.errorMessage?.let { { Text(it) } }
+                        ?: { Text("Alarm fires when within this distance of the session max") },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number,
                         imeAction = ImeAction.Next,
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                val minAltV = uiState.maxAltitudeMinAltitudeValidation
+                val reactV = uiState.maxAltitudeReactivationThresholdValidation
                 OutlinedTextField(
-                    value = uiState.maxAltitudeMinAltitudeFeet,
-                    onValueChange = { onAction(AdvancedAction.UpdateMaxAltitudeMinAltitude(it)) },
-                    label = { Text("Minimum altitude to track (ft)") },
+                    value = uiState.maxAltitudeReactivationThresholdFeet,
+                    onValueChange = {
+                        onAction(
+                            AdvancedAction.UpdateMaxAltitudeReactivationThreshold(
+                                it
+                            )
+                        )
+                    },
+                    label = { Text("Reactivation threshold (ft below max)") },
                     singleLine = true,
-                    isError = !minAltV.isValid,
-                    supportingText = minAltV.errorMessage?.let { { Text(it) } }
-                        ?: { Text("Avoids triggering near the ground") },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                val silenceV = uiState.maxAltitudeSilenceValidation
-                OutlinedTextField(
-                    value = uiState.maxAltitudeSilenceMinutes,
-                    onValueChange = { onAction(AdvancedAction.UpdateMaxAltitudeSilenceMinutes(it)) },
-                    label = { Text("Silence duration (minutes)") },
-                    singleLine = true,
-                    isError = !silenceV.isValid,
-                    supportingText = silenceV.errorMessage?.let { { Text(it) } }
-                        ?: { Text("How long the notification silence lasts") },
+                    isError = !reactV.isValid,
+                    supportingText = reactV.errorMessage?.let { { Text(it) } }
+                        ?: { Text("Alarm re-arms after descending this far below the max") },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number,
                         imeAction = ImeAction.Done,
@@ -245,7 +245,6 @@ private fun SwitchRow(
     label: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -253,10 +252,6 @@ private fun SwitchRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, modifier = Modifier.weight(1f))
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            enabled = enabled,
-        )
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

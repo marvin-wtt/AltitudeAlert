@@ -3,13 +3,17 @@ package one.ballooning.altitudealert.ui
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -22,16 +26,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -130,9 +139,7 @@ private fun LiveStatusCard(uiState: MainUiState, onAction: (MainAction) -> Unit)
             // ── Primary altitude readout ──────────────────────────────────────
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    text = status.altitudeFeet
-                        ?.let { "%,d ft".format(it.toInt()) }
-                        ?: "– – –",
+                    text = status.altitudeFeet?.let { "%,d ft".format(it.toInt()) } ?: "– – –",
                     fontSize = 56.sp,
                     fontWeight = FontWeight.Bold,
                     color = statusColor,
@@ -147,9 +154,10 @@ private fun LiveStatusCard(uiState: MainUiState, onAction: (MainAction) -> Unit)
                 }
             }
 
-            // ── Maximum altitude — own row, bracketed by dividers ─────────────
-            status.sessionMaxFeet?.let { max ->
+            // ── Maximum altitude — row + max altitude alarm status ───────────
+            if (status.sessionMaxFeet != null || uiState.maxAltitudeEnabled) {
                 HorizontalDivider()
+                // Altitude value + label
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -171,11 +179,34 @@ private fun LiveStatusCard(uiState: MainUiState, onAction: (MainAction) -> Unit)
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Text(
-                        text = "%,d ft".format(max.toInt()),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    Column(horizontalAlignment = Alignment.End) {
+                        if (status.sessionMaxFeet != null) {
+                            Text(
+                                text = "%,d ft".format(status.sessionMaxFeet.toInt()),
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        // Timestamp in UTC of the last alarm event
+                        uiState.maxAltitudeAlarmTimestampMs?.let { ts ->
+                            val formatted = remember(ts) {
+                                val instant = Instant.ofEpochMilli(ts)
+                                val dt = instant.atOffset(ZoneOffset.UTC)
+                                val dateFmt = DateTimeFormatter.ofPattern("dd MMM yyyy")
+                                val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
+                                "${timeFmt.format(dt)} UTC · ${dateFmt.format(dt)}"
+                            }
+                            Text(
+                                text = formatted,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                // Max altitude alarm status — only shown when the feature is enabled
+                if (uiState.maxAltitudeEnabled) {
+                    MaxAltitudeAlarmStatusRow(uiState, onAction)
                 }
                 HorizontalDivider()
             }
@@ -310,9 +341,11 @@ private fun BandIndicator(
     val safeColor = markerColor
     val approachColor = markerColor.copy(alpha = 0.30f)
 
-    Canvas(modifier = modifier
-        .fillMaxWidth()
-        .height(56.dp)) {
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp)
+    ) {
         // ── Coordinate mapping ────────────────────────────────────────────────
         // Margin = 30% of band width each side → band fills ~62% of track width
         val bandRange = (upperFeet - lowerFeet).coerceAtLeast(1f)
@@ -384,14 +417,10 @@ private fun BandIndicator(
         val tickW = 2.dp.toPx()
         val tickColor = labelColor.copy(alpha = 0.6f)
         drawRect(
-            color = tickColor,
-            topLeft = Offset(xLo - tickW / 2, tickTop),
-            size = Size(tickW, tickH)
+            color = tickColor, topLeft = Offset(xLo - tickW / 2, tickTop), size = Size(tickW, tickH)
         )
         drawRect(
-            color = tickColor,
-            topLeft = Offset(xHi - tickW / 2, tickTop),
-            size = Size(tickW, tickH)
+            color = tickColor, topLeft = Offset(xHi - tickW / 2, tickTop), size = Size(tickW, tickH)
         )
 
         // ── Position marker ───────────────────────────────────────────────────
@@ -413,27 +442,100 @@ private fun BandIndicator(
         val labelY = size.height - 1.dp.toPx()
         drawIntoCanvas { canvas ->
             canvas.nativeCanvas.drawText(
-                "%,d ft".format(lowerFeet.toInt()),
-                xLo,
-                labelY,
-                labelPaint
+                "%,d ft".format(lowerFeet.toInt()), xLo, labelY, labelPaint
             )
             canvas.nativeCanvas.drawText(
-                "%,d ft".format(upperFeet.toInt()),
-                xHi,
-                labelY,
-                labelPaint
+                "%,d ft".format(upperFeet.toInt()), xHi, labelY, labelPaint
             )
         }
     }
 }
 
 
+/**
+ * Alarm status row for the max altitude alert.
+ * Shows: active alarm (with Acknowledge), silenced state (with Unsilence), or ready state.
+ */
+@Composable
+private fun MaxAltitudeAlarmStatusRow(uiState: MainUiState, onAction: (MainAction) -> Unit) {
+    when {
+        uiState.maxAltitudeAlarmActive -> {
+            // Alarm is sounding — show prominent acknowledge button
+            Button(
+                onClick = { onAction(MainAction.AcknowledgeMaxAltitude) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                ),
+            ) {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Acknowledge max altitude alarm", fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        uiState.maxAltitudeSilenced -> {
+            // Silenced — show chip + manual unsilence option
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                AssistChip(
+                    onClick = {},
+                    label = { Text("Alarm silenced", style = MaterialTheme.typography.labelLarge) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.NotificationsOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(AssistChipDefaults.IconSize),
+                        )
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    border = AssistChipDefaults.assistChipBorder(enabled = false),
+                )
+                TextButton(onClick = { onAction(MainAction.UnsilenceMaxAltitude) }) {
+                    Text("Unsilence")
+                }
+            }
+        }
+
+        else -> {
+            // Ready and unsilenced — show quiet indicator
+            AssistChip(
+                onClick = {},
+                label = { Text("Alarm armed", style = MaterialTheme.typography.labelLarge) },
+                leadingIcon = {
+                    Icon(
+                        Icons.Outlined.Notifications,
+                        contentDescription = null,
+                        modifier = Modifier.size(AssistChipDefaults.IconSize),
+                    )
+                },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    leadingIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+                border = AssistChipDefaults.assistChipBorder(enabled = false),
+            )
+        }
+    }
+}
+
 private fun approachingLabel(uiState: MainUiState): String {
     val result = uiState.liveStatus.alertResult ?: return "Approaching limit"
-    val closest = listOfNotNull(result.lower, result.upper)
-        .filter { it.status == AlertStatus.APPROACHING }
-        .minByOrNull { it.distanceFeet } ?: return "Approaching limit"
+    val closest =
+        listOfNotNull(result.lower, result.upper).filter { it.status == AlertStatus.APPROACHING }
+            .minByOrNull { it.distanceFeet } ?: return "Approaching limit"
     return "Approaching — %,d ft".format(closest.distanceFeet.toInt())
 }
 
@@ -453,9 +555,8 @@ private fun crossedLabel(uiState: MainUiState): String {
 
 @Composable
 private fun AlertsCard(uiState: MainUiState, onAction: (MainAction) -> Unit) {
-    val isCrossedUnmuted = uiState.alertsEnabled &&
-            uiState.liveStatus.alertResult?.overallStatus == AlertStatus.CROSSED &&
-            !uiState.crossingAlarmMuted
+    val isCrossedUnmuted =
+        uiState.alertsEnabled && uiState.liveStatus.alertResult?.overallStatus == AlertStatus.CROSSED && !uiState.crossingAlarmMuted
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -467,24 +568,18 @@ private fun AlertsCard(uiState: MainUiState, onAction: (MainAction) -> Unit) {
             // ── Status summary — always present ───────────────────────────────
             // Gives the button permanent context; never a lone control.
             val (summaryText, summaryIsError) = when (uiState.monitorReadiness) {
-                MonitorReadiness.MISSING_PERMISSIONS ->
-                    "Location and notification permissions are required." to true
+                MonitorReadiness.MISSING_PERMISSIONS -> "Location and notification permissions are required." to true
 
-                MonitorReadiness.MISSING_ALTITUDE_SOURCE ->
-                    "No altitude source available." to true
+                MonitorReadiness.MISSING_ALTITUDE_SOURCE -> "No altitude source available." to true
 
                 MonitorReadiness.READY -> when {
-                    !uiState.isConfigValid ->
-                        "Fix configuration errors before enabling alerts." to true
+                    !uiState.isConfigValid -> "Fix configuration errors before enabling alerts." to true
 
-                    !uiState.alertsEnabled && uiState.liveStatus.altitudeFeet == null ->
-                        "Waiting for altitude reading…" to false
+                    !uiState.alertsEnabled && uiState.liveStatus.altitudeFeet == null -> "Waiting for altitude reading…" to false
 
-                    uiState.alertsEnabled ->
-                        "Alerts are active." to false
+                    uiState.alertsEnabled -> "Alerts are active." to false
 
-                    else ->
-                        "Alerts are off." to false
+                    else -> "Alerts are off." to false
                 }
             }
             Text(
@@ -495,18 +590,16 @@ private fun AlertsCard(uiState: MainUiState, onAction: (MainAction) -> Unit) {
             )
 
             // Enable / disable button
-            val canEnable = uiState.monitorReadiness == MonitorReadiness.READY &&
-                    uiState.isConfigValid && uiState.liveStatus.altitudeFeet != null
+            val canEnable =
+                uiState.monitorReadiness == MonitorReadiness.READY && uiState.isConfigValid && uiState.liveStatus.altitudeFeet != null
             Button(
                 onClick = { onAction(MainAction.ToggleAlerts) },
                 enabled = uiState.alertsEnabled || canEnable,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),
-                colors = if (uiState.alertsEnabled)
-                    ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                else
-                    ButtonDefaults.buttonColors(),
+                colors = if (uiState.alertsEnabled) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                else ButtonDefaults.buttonColors(),
             ) {
                 Text(
                     text = if (uiState.alertsEnabled) "Disable alerts" else "Enable alerts",
@@ -635,8 +728,13 @@ private fun AltitudeBandCard(uiState: MainUiState, onAction: (MainAction) -> Uni
                 modifier = Modifier
                     .fillMaxWidth()
                     .onFocusChanged { focus ->
-                        if (!focus.isFocused)
-                            onAction(MainAction.UpdateBandUpperAltitude(flToFeet(uiState.bandUpperAltitudeFeet)))
+                        if (!focus.isFocused) onAction(
+                            MainAction.UpdateBandUpperAltitude(
+                                flToFeet(
+                                    uiState.bandUpperAltitudeFeet
+                                )
+                            )
+                        )
                     },
             )
 
@@ -659,8 +757,13 @@ private fun AltitudeBandCard(uiState: MainUiState, onAction: (MainAction) -> Uni
                 modifier = Modifier
                     .fillMaxWidth()
                     .onFocusChanged { focus ->
-                        if (!focus.isFocused)
-                            onAction(MainAction.UpdateBandLowerAltitude(flToFeet(uiState.bandLowerAltitudeFeet)))
+                        if (!focus.isFocused) onAction(
+                            MainAction.UpdateBandLowerAltitude(
+                                flToFeet(
+                                    uiState.bandLowerAltitudeFeet
+                                )
+                            )
+                        )
                     },
             )
         }
