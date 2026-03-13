@@ -59,11 +59,12 @@ data class MainUiState(
 
     val preferredSource: PreferredSource = PreferredSource.BAROMETER,
 
-    val bandLowerAltitudeFeet: String = "2800",
-    val bandUpperAltitudeFeet: String = "3200",
-    val qnhHpa: String = "1013",
+    val bandLowerAltitudeFeet: String = AlertConfig.DEFAULT.lowerLimitFeet.toInt().toString(),
+    val bandUpperAltitudeFeet: String = AlertConfig.DEFAULT.upperLimitFeet.toInt().toString(),
+    val qnhHpa: String = AlertConfig.DEFAULT.qnhHpa.toInt().toString(),
 
-    val approachThresholdFeet: String = "200",
+    val approachThresholdFeet: String = AlertConfig.DEFAULT.approachThresholdFeet.toInt()
+        .toString(),
 
     val thresholdAlertEnabled: Boolean = true,
     val soundEnabled: Boolean = true,
@@ -72,13 +73,15 @@ data class MainUiState(
 
     val warnOnLowAccuracy: Boolean = true,
 
-    val maxAltitudeEnabled: Boolean = false,
-    val maxAltitudeAlertThresholdFeet: String = "1000",
-    val maxAltitudeReactivationThresholdFeet: String = "2000",
+    val maxAltitudeEnabled: Boolean = MaxAltitudeConfig.DEFAULT.enabled,
+    val maxAltitudeAlertThresholdFeet: String = MaxAltitudeConfig.DEFAULT.alertThresholdFeet.toInt()
+        .toString(),
+    val maxAltitudeReactivationThresholdFeet: String = MaxAltitudeConfig.DEFAULT.reactivationThresholdFeet.toInt()
+        .toString(),
     // Runtime state synced from service
     val maxAltitudeAlarmActive: Boolean = false,
     val maxAltitudeSilenced: Boolean = true,
-    val maxAltitudeAlarmTimestampMs: Long? = null,
+    val sessionMaxTimestampMs: Long? = null,
 
     val liveStatus: LiveAltitudeStatus = LiveAltitudeStatus(),
 ) {
@@ -189,8 +192,8 @@ class MainViewModel(
                 }
             }
             viewModelScope.launch {
-                monitorBinder?.maxAltitudeAlarmTimestampMsFlow?.collect { ts ->
-                    _uiState.update { it.copy(maxAltitudeAlarmTimestampMs = ts) }
+                monitorBinder?.sessionMaxTimestampMsFlow?.collect { ts ->
+                    _uiState.update { it.copy(sessionMaxTimestampMs = ts) }
                 }
             }
         }
@@ -333,17 +336,24 @@ class MainViewModel(
         if (allParseable) viewModelScope.launch { configRepository.save(buildConfig(s)) }
     }
 
+    // Note: toFloatOrNull() fallbacks should never trigger in practice — persistIfValid()
+    // guarantees all fields are parseable before this is called. The fallbacks reference
+    // AlertConfig.DEFAULT so there is only one source of truth for default values.
     private fun buildConfig(s: MainUiState): AlertConfig = AlertConfig(
-        lowerLimitFeet = s.bandLowerAltitudeFeet.toFloatOrNull() ?: 2800f,
-        upperLimitFeet = s.bandUpperAltitudeFeet.toFloatOrNull() ?: 3200f,
-        qnhHpa = s.qnhHpa.toFloatOrNull() ?: 1013.25f,
+        lowerLimitFeet = s.bandLowerAltitudeFeet.toFloatOrNull()
+            ?: AlertConfig.DEFAULT.lowerLimitFeet,
+        upperLimitFeet = s.bandUpperAltitudeFeet.toFloatOrNull()
+            ?: AlertConfig.DEFAULT.upperLimitFeet,
+        qnhHpa = s.qnhHpa.toFloatOrNull() ?: AlertConfig.DEFAULT.qnhHpa,
         preferredSource = s.preferredSource,
-        approachThresholdFeet = s.approachThresholdFeet.toFloatOrNull() ?: 200f,
+        approachThresholdFeet = s.approachThresholdFeet.toFloatOrNull()
+            ?: AlertConfig.DEFAULT.approachThresholdFeet,
         maxAltitude = MaxAltitudeConfig(
             enabled = s.maxAltitudeEnabled,
-            alertThresholdFeet = s.maxAltitudeAlertThresholdFeet.toFloatOrNull() ?: 200f,
+            alertThresholdFeet = s.maxAltitudeAlertThresholdFeet.toFloatOrNull()
+                ?: MaxAltitudeConfig.DEFAULT.alertThresholdFeet,
             reactivationThresholdFeet = s.maxAltitudeReactivationThresholdFeet.toFloatOrNull()
-                ?: 500f,
+                ?: MaxAltitudeConfig.DEFAULT.reactivationThresholdFeet,
         ),
         thresholdAlertEnabled = s.thresholdAlertEnabled,
         soundEnabled = s.soundEnabled,

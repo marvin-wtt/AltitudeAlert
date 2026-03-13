@@ -9,7 +9,11 @@ data class MaxAltitudeConfig(
     val enabled: Boolean = true,
     val alertThresholdFeet: Float = 1000f,
     val reactivationThresholdFeet: Float = 2000f,
-)
+) {
+    companion object {
+        val DEFAULT = MaxAltitudeConfig()
+    }
+}
 
 @Serializable
 data class AlertConfig(
@@ -22,4 +26,8 @@ data class AlertConfig(
     val thresholdAlertEnabled: Boolean = true,
     val soundEnabled: Boolean = true,
     val vibrateEnabled: Boolean = true,
-)
+) {
+    companion object {
+        val DEFAULT = AlertConfig()
+    }
+}
