@@ -9,7 +9,6 @@ import one.ballooning.altitudealert.data.source.FusedAltitudeDataSource
 
 /**
  * Task list
- * TODO Validate Barometer against GPS
  * TODO Set QHN to standard for flight levels
  * TODO Update max altitude style
  * TODO Show in UI when altitude max alerts are silenced

@@ -88,7 +88,7 @@ class FusedAltitudeDataSource(private val context: Context) : AltitudeDataSource
         }
         client.requestLocationUpdates(request, ContextCompat.getMainExecutor(context), callback)
         awaitClose { client.removeLocationUpdates(callback) }
-    }.conflate()
+    }
 
     companion object {
         private const val GPS_TIMEOUT_MS = 5_000L

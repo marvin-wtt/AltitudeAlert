@@ -19,8 +19,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.sample
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import one.ballooning.altitudealert.AltitudeAlertApplication
 import one.ballooning.altitudealert.data.model.AlertConfig
@@ -103,24 +104,26 @@ class MonitorService : Service() {
 
         MonitorNotification.createChannels(applicationContext)
 
-        val combined = monitor.monitorState()
-            .combine(app.configRepository.configFlow) { state, config -> state to config }
+        // Cache the latest config so alert/notification handlers can read it without
+        // re-combining — avoids an extra flow hop on every barometer/GPS emission.
+        val latestConfig =
+            app.configRepository.configFlow.stateIn(scope, SharingStarted.Eagerly, AlertConfig())
 
         scope.launch {
-            combined.catch { e -> Log.e(TAG, "Flow error", e) }.collect { (state, config) ->
-                _stateFlow.value = state
-                handleBandAlerts(state, config)
-                handleGpsLost(state)
-                handleMaxAltitudeAlert(state, config)
-            }
+            monitor.monitorState().catch { e -> Log.e(TAG, "Flow error", e) }.collect { state ->
+                    val config = latestConfig.value
+                    _stateFlow.value = state
+                    handleBandAlerts(state, config)
+                    handleGpsLost(state)
+                    handleMaxAltitudeAlert(state, config)
+                }
             Log.w(TAG, "Collection ended unexpectedly")
         }
 
         scope.launch {
-            combined.sample(NOTIFICATION_UPDATE_INTERVAL_MS)
-                .catch { e -> Log.e(TAG, "Notification flow error", e) }
-                .collect { (state, config) ->
-                    notification.update(state, config, _crossingMuted.value)
+            monitor.monitorState().sample(NOTIFICATION_UPDATE_INTERVAL_MS)
+                .catch { e -> Log.e(TAG, "Notification flow error", e) }.collect { state ->
+                    notification.update(state, latestConfig.value, _crossingMuted.value)
                 }
         }
     }
@@ -213,10 +216,12 @@ class MonitorService : Service() {
     // ─── GPS lost notification ───────────────────────────────────────────────────
 
     private fun handleGpsLost(state: MonitorState) {
-        if (!_alertsEnabled.value) return
-
-        if (state.altitudeSource != AltitudeSourceType.GPS) {
-            previousGpsLost = false
+        if (!_alertsEnabled.value || state.altitudeSource != AltitudeSourceType.GPS) {
+            // If alerts are off, cancel any lingering notification and reset state.
+            if (previousGpsLost) {
+                notification.cancelGpsLostNotification()
+                previousGpsLost = false
+            }
             return
         }
         val isLost = state.gpsAccuracyStatus == GpsAccuracyStatus.LOST
