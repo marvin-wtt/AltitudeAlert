@@ -1,29 +1,29 @@
 package one.ballooning.altitudealert.ui
 
-import android.Manifest
-import android.app.Application
 import android.content.ComponentName
-import android.content.Context
 import android.content.ServiceConnection
-import android.content.pm.PackageManager
-import android.hardware.SensorManager
-import android.hardware.Sensor
 import android.os.IBinder
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import one.ballooning.altitudealert.data.AlertConfig
-import one.ballooning.altitudealert.data.AppSettings
-import one.ballooning.altitudealert.data.MaxAltitudeConfig
-import one.ballooning.altitudealert.data.PreferredSource
-import one.ballooning.altitudealert.monitor.AlertResult
-import one.ballooning.altitudealert.monitor.AltitudeSourceType
-import one.ballooning.altitudealert.monitor.GpsAccuracyStatus
-import one.ballooning.altitudealert.monitor.MonitorState
+import one.ballooning.altitudealert.AltitudeAlertApplication
+import one.ballooning.altitudealert.data.model.AlertConfig
+import one.ballooning.altitudealert.data.model.MaxAltitudeConfig
+import one.ballooning.altitudealert.data.model.PreferredSource
+import one.ballooning.altitudealert.data.repository.ConfigRepository
+import one.ballooning.altitudealert.data.repository.SystemInfo
+import one.ballooning.altitudealert.data.repository.SystemInfoRepository
+import one.ballooning.altitudealert.domain.AlertResult
+import one.ballooning.altitudealert.domain.AltitudeSourceType
+import one.ballooning.altitudealert.domain.GpsAccuracyStatus
+import one.ballooning.altitudealert.domain.MonitorState
 import one.ballooning.altitudealert.service.MonitorService
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
@@ -33,11 +33,7 @@ enum class ReferenceMode { ALTITUDE, FLIGHT_LEVEL }
 
 // ─── Readiness ────────────────────────────────────────────────────────────────
 
-enum class MonitorReadiness {
-    READY,
-    MISSING_PERMISSIONS,
-    MISSING_ALTITUDE_SOURCE,
-}
+enum class MonitorReadiness { READY, MISSING_PERMISSIONS, MISSING_ALTITUDE_SOURCE }
 
 // ─── Sub-states ───────────────────────────────────────────────────────────────
 
@@ -58,30 +54,19 @@ data class AlarmConfig(
     val repeatSeconds: String = "5",
 )
 
-data class PermissionState(
-    val fineLocationGranted: Boolean = false,
-    val coarseLocationGranted: Boolean = false,
-    val notificationsGranted: Boolean = false,
-) {
-    val hasForegroundLocation: Boolean
-        get() = fineLocationGranted || coarseLocationGranted
-    val canMonitor: Boolean
-        get() = hasForegroundLocation && notificationsGranted
-}
-
 // ─── UI state ─────────────────────────────────────────────────────────────────
 
 data class MainUiState(
     val currentScreen: AppScreen = AppScreen.MAIN,
     val alertsEnabled: Boolean = false,
 
-    val permissions: PermissionState = PermissionState(),
-    val showPermissionDialog: Boolean = false,
-    val permissionsPreviouslyDenied: Boolean = false,   // true after launcher returns still-denied
-
     val hasBarometer: Boolean = false,
-    val preferredSource: PreferredSource = PreferredSource.BAROMETER,
+    val fineLocationGranted: Boolean = false,
+    val coarseLocationGranted: Boolean = false,
+    val notificationsGranted: Boolean = false,
+    val permissionsPreviouslyDenied: Boolean = false,
 
+    val preferredSource: PreferredSource = PreferredSource.BAROMETER,
     val referenceMode: ReferenceMode = ReferenceMode.ALTITUDE,
 
     val bandLowerAltitudeFeet: String = "2800",
@@ -97,7 +82,6 @@ data class MainUiState(
 
     val warnOnLowAccuracy: Boolean = true,
 
-    // Max altitude alert config
     val maxAltitudeEnabled: Boolean = false,
     val maxAltitudeThresholdFeet: String = "50",
     val maxAltitudeMinAltitudeFeet: String = "500",
@@ -105,73 +89,52 @@ data class MainUiState(
 
     val liveStatus: LiveAltitudeStatus = LiveAltitudeStatus(),
 ) {
-    // ── Source / readiness ────────────────────────────────────────────────────
-
-    val altitudeSourceAvailable: Boolean
-        get() = hasBarometer || permissions.hasForegroundLocation
+    val hasForegroundLocation: Boolean get() = fineLocationGranted || coarseLocationGranted
+    val canMonitor: Boolean get() = hasForegroundLocation && notificationsGranted
+    val altitudeSourceAvailable: Boolean get() = hasBarometer || hasForegroundLocation
 
     val monitorReadiness: MonitorReadiness
         get() = when {
-            !permissions.canMonitor -> MonitorReadiness.MISSING_PERMISSIONS
+            !canMonitor -> MonitorReadiness.MISSING_PERMISSIONS
             !altitudeSourceAvailable -> MonitorReadiness.MISSING_ALTITUDE_SOURCE
             else -> MonitorReadiness.READY
         }
 
-    // QNH is only relevant when using barometer as source
-    val showQnh: Boolean
-        get() = preferredSource == PreferredSource.BAROMETER || !hasBarometer
-
-    // ── Main screen validation ────────────────────────────────────────────────
+    val showQnh: Boolean get() = preferredSource == PreferredSource.BAROMETER || !hasBarometer
 
     val qnhValidation: ValidationResult
         get() = if (showQnh) Validators.qnh(qnhHpa) else ValidationResult.Valid
-
     val bandLowerAltitudeValidation: ValidationResult
         get() = Validators.bandLower(bandLowerAltitudeFeet, bandUpperAltitudeFeet)
-
     val bandUpperAltitudeValidation: ValidationResult
         get() = Validators.bandUpper(bandUpperAltitudeFeet, bandLowerAltitudeFeet)
-
     val bandLowerFLValidation: ValidationResult
         get() = Validators.bandLowerFL(bandLowerFlightLevel, bandUpperFlightLevel)
-
     val bandUpperFLValidation: ValidationResult
         get() = Validators.bandUpperFL(bandUpperFlightLevel, bandLowerFlightLevel)
-
-    // ── Advanced screen validation ────────────────────────────────────────────
-
     val approachThresholdValidation: ValidationResult
         get() = Validators.approachThreshold(approachThresholdFeet)
-
     val maxAltitudeThresholdValidation: ValidationResult
         get() = if (maxAltitudeEnabled) Validators.maxAltitudeThreshold(maxAltitudeThresholdFeet)
         else ValidationResult.Valid
-
     val maxAltitudeMinAltitudeValidation: ValidationResult
         get() = if (maxAltitudeEnabled) Validators.maxAltitudeMinAltitude(maxAltitudeMinAltitudeFeet)
         else ValidationResult.Valid
-
     val maxAltitudeSilenceValidation: ValidationResult
         get() = if (maxAltitudeEnabled) Validators.silenceMinutes(maxAltitudeSilenceMinutes)
         else ValidationResult.Valid
-
     val thresholdRepeatValidation: ValidationResult
         get() = if (thresholdAlarm.repeatEnabled) Validators.repeatSeconds(thresholdAlarm.repeatSeconds)
         else ValidationResult.Valid
-
     val crossingRepeatValidation: ValidationResult
         get() = if (crossingAlarm.repeatEnabled) Validators.repeatSeconds(crossingAlarm.repeatSeconds)
         else ValidationResult.Valid
 
-    // ── Overall validity ──────────────────────────────────────────────────────
-
     val isConfigValid: Boolean
         get() = listOf(
             qnhValidation,
-            if (referenceMode == ReferenceMode.ALTITUDE) bandLowerAltitudeValidation
-            else bandLowerFLValidation,
-            if (referenceMode == ReferenceMode.ALTITUDE) bandUpperAltitudeValidation
-            else bandUpperFLValidation,
+            if (referenceMode == ReferenceMode.ALTITUDE) bandLowerAltitudeValidation else bandLowerFLValidation,
+            if (referenceMode == ReferenceMode.ALTITUDE) bandUpperAltitudeValidation else bandUpperFLValidation,
             approachThresholdValidation,
             maxAltitudeThresholdValidation,
             maxAltitudeMinAltitudeValidation,
@@ -183,12 +146,38 @@ data class MainUiState(
 
 // ─── ViewModel ────────────────────────────────────────────────────────────────
 
-class MainViewModel(application: Application) : AndroidViewModel(application) {
+class MainViewModel(
+    private val configRepository: ConfigRepository,
+    private val systemInfoRepository: SystemInfoRepository,
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState
 
-    private val settings = AppSettings(application)
+    init {
+        // Always reset alertsEnabled to false on startup — both so the UI starts
+        // off and so the service (which reads configFlow directly) agrees.
+        viewModelScope.launch {
+            val current = configRepository.configFlow.first()
+            if (current.alertsEnabled) configRepository.save(current.copy(alertsEnabled = false))
+        }
+        // Pre-populate UI from persisted config so the user never sees blank fields.
+        viewModelScope.launch {
+            configRepository.configFlow.collect { config ->
+                _uiState.update { applyConfigToUiState(it, config) }
+            }
+        }
+    }
+
+    // ─── Factory ──────────────────────────────────────────────────────────────
+
+    companion object {
+        fun factory(app: AltitudeAlertApplication): ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                MainViewModel(app.configRepository, app.systemInfoRepository)
+            }
+        }
+    }
 
     // ─── Service connection ───────────────────────────────────────────────────
 
@@ -197,7 +186,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val monitorBinder = binder as MonitorService.MonitorBinder
             viewModelScope.launch {
                 monitorBinder.stateFlow.collect { state ->
-                    if (state != null) applyMonitorState(state)
+                    if (state != null) _uiState.update { it.copy(liveStatus = state.toLiveStatus()) }
                 }
             }
         }
@@ -207,41 +196,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun applyMonitorState(state: MonitorState) {
+    // ─── System info ──────────────────────────────────────────────────────────
+
+    fun refreshSystemInfo() {
+        val info: SystemInfo = systemInfoRepository.querySystemInfo()
         _uiState.update {
             it.copy(
-                liveStatus = LiveAltitudeStatus(
-                    altitudeFeet = state.altitudeFeet,
-                    flightLevel = state.flightLevel,
-                    alertResult = state.alertResult,
-                    altitudeSource = state.altitudeSource,
-                    gpsAccuracyStatus = state.gpsAccuracyStatus,
-                    gpsVerticalAccuracyFeet = state.gpsVerticalAccuracyFeet,
-                    sessionMaxFeet = state.sessionMaxFeet,
-                )
+                hasBarometer = info.hasBarometer,
+                preferredSource = if (!info.hasBarometer) PreferredSource.GPS else it.preferredSource,
+                fineLocationGranted = info.fineLocationGranted,
+                coarseLocationGranted = info.coarseLocationGranted,
+                notificationsGranted = info.notificationsGranted,
             )
         }
     }
 
-    // ─── Action dispatchers ───────────────────────────────────────────────────
+    fun markPermissionsDenied() {
+        _uiState.update { it.copy(permissionsPreviouslyDenied = true) }
+    }
+
+    // ─── Main screen actions ──────────────────────────────────────────────────
 
     fun onAction(action: MainAction) {
         when (action) {
             MainAction.ToggleAlerts -> toggleAlerts()
-            MainAction.NavigateToAdvancedSettings -> navigateTo(AppScreen.ADVANCED_SETTINGS)
-            MainAction.RequestPermissions -> Unit  // handled by AltitudeAlertApp callback
-            MainAction.OpenAppSettings -> Unit  // handled by AltitudeAlertApp callback
-            is MainAction.SetReferenceMode -> _uiState.update { it.copy(referenceMode = action.mode) }
-            is MainAction.SetPreferredSource -> _uiState.update { it.copy(preferredSource = action.source) }
-            is MainAction.UpdateBandLowerAltitude -> _uiState.update { it.copy(bandLowerAltitudeFeet = action.value) }
-            is MainAction.UpdateBandUpperAltitude -> _uiState.update { it.copy(bandUpperAltitudeFeet = action.value) }
-            is MainAction.UpdateBandLowerFlightLevel -> _uiState.update {
+            MainAction.NavigateToAdvancedSettings -> _uiState.update { it.copy(currentScreen = AppScreen.ADVANCED_SETTINGS) }
+            MainAction.RequestPermissions -> Unit
+            MainAction.OpenAppSettings -> Unit
+            is MainAction.SetReferenceMode -> updateAndPersist { it.copy(referenceMode = action.mode) }
+            is MainAction.SetPreferredSource -> updateAndPersist { it.copy(preferredSource = action.source) }
+            is MainAction.UpdateBandLowerAltitude -> updateAndPersist {
+                it.copy(
+                    bandLowerAltitudeFeet = action.value
+                )
+            }
+
+            is MainAction.UpdateBandUpperAltitude -> updateAndPersist {
+                it.copy(
+                    bandUpperAltitudeFeet = action.value
+                )
+            }
+
+            is MainAction.UpdateBandLowerFlightLevel -> updateAndPersist {
                 it.copy(
                     bandLowerFlightLevel = action.value
                 )
             }
 
-            is MainAction.UpdateBandUpperFlightLevel -> _uiState.update {
+            is MainAction.UpdateBandUpperFlightLevel -> updateAndPersist {
                 it.copy(
                     bandUpperFlightLevel = action.value
                 )
@@ -250,218 +252,128 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             is MainAction.UpdateQnh -> {
                 _uiState.update { it.copy(qnhHpa = action.value) }
                 action.value.toFloatOrNull()?.let { qnh ->
-                    viewModelScope.launch { settings.updateQnh(qnh) }
+                    viewModelScope.launch { configRepository.updateQnh(qnh) }
                 }
             }
         }
-        when (action) {
-            is MainAction.SetReferenceMode,
-            is MainAction.SetPreferredSource,
-            is MainAction.UpdateBandLowerAltitude,
-            is MainAction.UpdateBandUpperAltitude,
-            is MainAction.UpdateBandLowerFlightLevel,
-            is MainAction.UpdateBandUpperFlightLevel -> persistConfig()
-
-            else -> Unit
-        }
     }
+
+    // ─── Advanced screen actions ──────────────────────────────────────────────
 
     fun onAdvancedAction(action: AdvancedAction) {
         when (action) {
-            AdvancedAction.NavigateBack -> navigateTo(AppScreen.MAIN)
-            is AdvancedAction.SetDistanceThresholdFeet -> _uiState.update {
-                it.copy(
-                    approachThresholdFeet = action.value
-                )
-            }
+            AdvancedAction.NavigateBack ->
+                _uiState.update { it.copy(currentScreen = AppScreen.MAIN) }
 
-            is AdvancedAction.SetThresholdSoundEnabled -> _uiState.update {
-                it.copy(
-                    thresholdAlarm = it.thresholdAlarm.copy(
-                        soundEnabled = action.enabled
-                    )
-                )
-            }
+            is AdvancedAction.SetDistanceThresholdFeet ->
+                updateAndPersist { it.copy(approachThresholdFeet = action.value) }
 
-            is AdvancedAction.SetThresholdVibrationEnabled -> _uiState.update {
-                it.copy(
-                    thresholdAlarm = it.thresholdAlarm.copy(vibrationEnabled = action.enabled)
-                )
-            }
+            is AdvancedAction.SetThresholdSoundEnabled ->
+                _uiState.update { it.copy(thresholdAlarm = it.thresholdAlarm.copy(soundEnabled = action.enabled)) }
 
-            is AdvancedAction.SetThresholdRepeatEnabled -> _uiState.update {
-                it.copy(
-                    thresholdAlarm = it.thresholdAlarm.copy(
-                        repeatEnabled = action.enabled
-                    )
-                )
-            }
+            is AdvancedAction.SetThresholdVibrationEnabled ->
+                updateAndPersist { it.copy(thresholdAlarm = it.thresholdAlarm.copy(vibrationEnabled = action.enabled)) }
 
-            is AdvancedAction.UpdateThresholdRepeatSeconds -> _uiState.update {
-                it.copy(
-                    thresholdAlarm = it.thresholdAlarm.copy(repeatSeconds = action.value)
-                )
-            }
+            is AdvancedAction.SetThresholdRepeatEnabled ->
+                _uiState.update { it.copy(thresholdAlarm = it.thresholdAlarm.copy(repeatEnabled = action.enabled)) }
 
-            is AdvancedAction.SetCrossingSoundEnabled -> _uiState.update {
-                it.copy(
-                    crossingAlarm = it.crossingAlarm.copy(
-                        soundEnabled = action.enabled
-                    )
-                )
-            }
+            is AdvancedAction.UpdateThresholdRepeatSeconds ->
+                _uiState.update { it.copy(thresholdAlarm = it.thresholdAlarm.copy(repeatSeconds = action.value)) }
 
-            is AdvancedAction.SetCrossingVibrationEnabled -> _uiState.update {
-                it.copy(
-                    crossingAlarm = it.crossingAlarm.copy(
-                        vibrationEnabled = action.enabled
-                    )
-                )
-            }
+            is AdvancedAction.SetCrossingSoundEnabled ->
+                _uiState.update { it.copy(crossingAlarm = it.crossingAlarm.copy(soundEnabled = action.enabled)) }
 
-            is AdvancedAction.SetCrossingRepeatEnabled -> _uiState.update {
-                it.copy(
-                    crossingAlarm = it.crossingAlarm.copy(
-                        repeatEnabled = action.enabled
-                    )
-                )
-            }
+            is AdvancedAction.SetCrossingVibrationEnabled ->
+                updateAndPersist { it.copy(crossingAlarm = it.crossingAlarm.copy(vibrationEnabled = action.enabled)) }
 
-            is AdvancedAction.UpdateCrossingRepeatSeconds -> _uiState.update {
-                it.copy(
-                    crossingAlarm = it.crossingAlarm.copy(
-                        repeatSeconds = action.value
-                    )
-                )
-            }
+            is AdvancedAction.SetCrossingRepeatEnabled ->
+                _uiState.update { it.copy(crossingAlarm = it.crossingAlarm.copy(repeatEnabled = action.enabled)) }
 
-            is AdvancedAction.SetWarnOnLowAccuracy -> _uiState.update { it.copy(warnOnLowAccuracy = action.enabled) }
-            is AdvancedAction.SetMaxAltitudeAlertEnabled -> _uiState.update {
-                it.copy(
-                    maxAltitudeEnabled = action.enabled
-                )
-            }
+            is AdvancedAction.UpdateCrossingRepeatSeconds ->
+                _uiState.update { it.copy(crossingAlarm = it.crossingAlarm.copy(repeatSeconds = action.value)) }
 
-            is AdvancedAction.UpdateMaxAltitudeThreshold -> _uiState.update {
-                it.copy(
-                    maxAltitudeThresholdFeet = action.value
-                )
-            }
+            is AdvancedAction.SetWarnOnLowAccuracy ->
+                _uiState.update { it.copy(warnOnLowAccuracy = action.enabled) }
 
-            is AdvancedAction.UpdateMaxAltitudeMinAltitude -> _uiState.update {
-                it.copy(
-                    maxAltitudeMinAltitudeFeet = action.value
-                )
-            }
+            is AdvancedAction.SetMaxAltitudeAlertEnabled ->
+                updateAndPersist { it.copy(maxAltitudeEnabled = action.enabled) }
 
-            is AdvancedAction.UpdateMaxAltitudeSilenceMinutes -> _uiState.update {
-                it.copy(
-                    maxAltitudeSilenceMinutes = action.value
-                )
-            }
-        }
-        when (action) {
-            is AdvancedAction.SetDistanceThresholdFeet,
-            is AdvancedAction.SetThresholdVibrationEnabled,
-            is AdvancedAction.SetCrossingVibrationEnabled,
-            is AdvancedAction.SetMaxAltitudeAlertEnabled,
-            is AdvancedAction.UpdateMaxAltitudeThreshold,
-            is AdvancedAction.UpdateMaxAltitudeMinAltitude,
-            is AdvancedAction.UpdateMaxAltitudeSilenceMinutes -> persistConfig()
+            is AdvancedAction.UpdateMaxAltitudeThreshold ->
+                updateAndPersist { it.copy(maxAltitudeThresholdFeet = action.value) }
 
-            else -> Unit
+            is AdvancedAction.UpdateMaxAltitudeMinAltitude ->
+                updateAndPersist { it.copy(maxAltitudeMinAltitudeFeet = action.value) }
+
+            is AdvancedAction.UpdateMaxAltitudeSilenceMinutes ->
+                updateAndPersist { it.copy(maxAltitudeSilenceMinutes = action.value) }
         }
     }
 
-    // ─── Sensor availability ──────────────────────────────────────────────────
-
-    fun checkSensorAvailability(context: Context) {
-        val sm = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val hasBarometer = sm.getDefaultSensor(Sensor.TYPE_PRESSURE) != null
-        _uiState.update {
-            it.copy(
-                hasBarometer = hasBarometer,
-                // If no barometer, force GPS as source
-                preferredSource = if (!hasBarometer) PreferredSource.GPS else it.preferredSource,
-            )
-        }
-    }
-
-    // ─── Permissions ──────────────────────────────────────────────────────────
-
-    fun refreshPermissionState(context: Context) {
-        _uiState.update {
-            it.copy(
-                permissions = PermissionState(
-                    fineLocationGranted = isGranted(
-                        context,
-                        Manifest.permission.ACCESS_FINE_LOCATION
-                    ),
-                    coarseLocationGranted = isGranted(
-                        context,
-                        Manifest.permission.ACCESS_COARSE_LOCATION
-                    ),
-                    notificationsGranted = isGranted(
-                        context,
-                        Manifest.permission.POST_NOTIFICATIONS
-                    ),
-                )
-            )
-        }
-    }
-
-    private fun isGranted(context: Context, permission: String) =
-        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
-
-    // ─── Internals ────────────────────────────────────────────────────────────
-
-    private fun navigateTo(screen: AppScreen) =
-        _uiState.update { it.copy(currentScreen = screen) }
+    // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private fun toggleAlerts() {
         val state = _uiState.value
         if (state.alertsEnabled) {
-            _uiState.update { it.copy(alertsEnabled = false) }
-            persistConfig()
+            updateAndPersist { it.copy(alertsEnabled = false) }
             return
         }
         when (state.monitorReadiness) {
-            MonitorReadiness.MISSING_PERMISSIONS -> _uiState.update { it.copy(showPermissionDialog = true) }
-            MonitorReadiness.MISSING_ALTITUDE_SOURCE -> Unit  // button disabled
+            MonitorReadiness.MISSING_PERMISSIONS -> Unit
+            MonitorReadiness.MISSING_ALTITUDE_SOURCE -> Unit
             MonitorReadiness.READY -> {
-                if (state.isConfigValid) {
-                    _uiState.update { it.copy(alertsEnabled = true) }
-                    persistConfig()
-                }
-                // If config invalid, button is already disabled — unreachable
+                if (state.isConfigValid) updateAndPersist { it.copy(alertsEnabled = true) }
             }
         }
     }
 
-    /** Called by MainActivity after the permission launcher returns still-denied. */
-    fun markPermissionsDenied() {
-        _uiState.update { it.copy(permissionsPreviouslyDenied = true) }
+    private fun updateAndPersist(transform: (MainUiState) -> MainUiState) {
+        _uiState.update(transform)
+        viewModelScope.launch { configRepository.save(buildConfig(_uiState.value)) }
     }
 
-    private fun persistConfig() {
-        val s = _uiState.value
-        val config = AlertConfig(
-            lowerLimitFeet = s.bandLowerAltitudeFeet.toFloatOrNull() ?: 2800f,
-            upperLimitFeet = s.bandUpperAltitudeFeet.toFloatOrNull() ?: 3200f,
-            qnhHpa = s.qnhHpa.toFloatOrNull() ?: 1013.25f,
-            useFlightLevels = s.referenceMode == ReferenceMode.FLIGHT_LEVEL,
-            preferredSource = s.preferredSource,
-            approachThresholdFeet = s.approachThresholdFeet.toFloatOrNull() ?: 200f,
-            maxAltitude = MaxAltitudeConfig(
-                enabled = s.maxAltitudeEnabled,
-                exceedanceMarginFeet = s.maxAltitudeThresholdFeet.toFloatOrNull() ?: 50f,
-                minAltitudeFeet = s.maxAltitudeMinAltitudeFeet.toFloatOrNull() ?: 500f,
-                silenceDurationMinutes = s.maxAltitudeSilenceMinutes.toIntOrNull() ?: 5,
-            ),
-            vibrate = s.thresholdAlarm.vibrationEnabled,
-            alarmSoundUri = null,
-            alertsEnabled = s.alertsEnabled,
+    private fun buildConfig(s: MainUiState): AlertConfig = AlertConfig(
+        lowerLimitFeet = s.bandLowerAltitudeFeet.toFloatOrNull() ?: 2800f,
+        upperLimitFeet = s.bandUpperAltitudeFeet.toFloatOrNull() ?: 3200f,
+        qnhHpa = s.qnhHpa.toFloatOrNull() ?: 1013.25f,
+        useFlightLevels = s.referenceMode == ReferenceMode.FLIGHT_LEVEL,
+        preferredSource = s.preferredSource,
+        approachThresholdFeet = s.approachThresholdFeet.toFloatOrNull() ?: 200f,
+        maxAltitude = MaxAltitudeConfig(
+            enabled = s.maxAltitudeEnabled,
+            exceedanceMarginFeet = s.maxAltitudeThresholdFeet.toFloatOrNull() ?: 50f,
+            minAltitudeFeet = s.maxAltitudeMinAltitudeFeet.toFloatOrNull() ?: 500f,
+            silenceDurationMinutes = s.maxAltitudeSilenceMinutes.toIntOrNull() ?: 5,
+        ),
+        vibrate = s.thresholdAlarm.vibrationEnabled,
+        alarmSoundUri = null,
+        alertsEnabled = false, // always persisted as off; runtime state only
+    )
+
+    private fun applyConfigToUiState(current: MainUiState, config: AlertConfig): MainUiState =
+        current.copy(
+            // alertsEnabled is intentionally not restored — alerts always start off.
+            preferredSource = config.preferredSource,
+            referenceMode = if (config.useFlightLevels) ReferenceMode.FLIGHT_LEVEL else ReferenceMode.ALTITUDE,
+            bandLowerAltitudeFeet = config.lowerLimitFeet.toInt().toString(),
+            bandUpperAltitudeFeet = config.upperLimitFeet.toInt().toString(),
+            bandLowerFlightLevel = (config.lowerLimitFeet / 100).toInt().toString(),
+            bandUpperFlightLevel = (config.upperLimitFeet / 100).toInt().toString(),
+            qnhHpa = config.qnhHpa.toInt().toString(),
+            approachThresholdFeet = config.approachThresholdFeet.toInt().toString(),
+            maxAltitudeEnabled = config.maxAltitude.enabled,
+            maxAltitudeThresholdFeet = config.maxAltitude.exceedanceMarginFeet.toInt().toString(),
+            maxAltitudeMinAltitudeFeet = config.maxAltitude.minAltitudeFeet.toInt().toString(),
+            maxAltitudeSilenceMinutes = config.maxAltitude.silenceDurationMinutes.toString(),
+            thresholdAlarm = current.thresholdAlarm.copy(vibrationEnabled = config.vibrate),
         )
-        viewModelScope.launch { settings.saveConfig(config) }
-    }
 }
+
+private fun MonitorState.toLiveStatus() = LiveAltitudeStatus(
+    altitudeFeet = altitudeFeet,
+    flightLevel = flightLevel,
+    alertResult = alertResult,
+    altitudeSource = altitudeSource,
+    gpsAccuracyStatus = gpsAccuracyStatus,
+    gpsVerticalAccuracyFeet = gpsVerticalAccuracyFeet,
+    sessionMaxFeet = sessionMaxFeet,
+)

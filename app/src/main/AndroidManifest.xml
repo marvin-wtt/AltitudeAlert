@@ -13,6 +13,7 @@
     <uses-feature android:name="android.hardware.sensor.barometer" android:required="false" />
 
     <application
+        android:name=".AltitudeAlertApplication"
         android:icon="@android:drawable/ic_dialog_info"
         android:label="Altitude Alert"
         android:roundIcon="@android:drawable/ic_dialog_info"
@@ -20,7 +21,7 @@
         android:theme="@style/Theme.AltitudeAlert">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -33,6 +34,7 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="location" />
+
     </application>
 
 </manifest>

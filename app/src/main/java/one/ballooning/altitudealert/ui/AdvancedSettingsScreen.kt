@@ -62,22 +62,46 @@ fun AdvancedSettingsScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         AlarmCard(
-                            title            = "Threshold alarm",
-                            config           = uiState.thresholdAlarm,
+                            title = "Threshold alarm",
+                            config = uiState.thresholdAlarm,
                             repeatValidation = uiState.thresholdRepeatValidation,
-                            onSetSound       = { onAction(AdvancedAction.SetThresholdSoundEnabled(it)) },
-                            onSetVibration   = { onAction(AdvancedAction.SetThresholdVibrationEnabled(it)) },
-                            onSetRepeat      = { onAction(AdvancedAction.SetThresholdRepeatEnabled(it)) },
-                            onUpdateRepeat   = { onAction(AdvancedAction.UpdateThresholdRepeatSeconds(it)) },
+                            onSetSound = { onAction(AdvancedAction.SetThresholdSoundEnabled(it)) },
+                            onSetVibration = {
+                                onAction(
+                                    AdvancedAction.SetThresholdVibrationEnabled(
+                                        it
+                                    )
+                                )
+                            },
+                            onSetRepeat = { onAction(AdvancedAction.SetThresholdRepeatEnabled(it)) },
+                            onUpdateRepeat = {
+                                onAction(
+                                    AdvancedAction.UpdateThresholdRepeatSeconds(
+                                        it
+                                    )
+                                )
+                            },
                         )
                         AlarmCard(
-                            title            = "Crossing alarm",
-                            config           = uiState.crossingAlarm,
+                            title = "Crossing alarm",
+                            config = uiState.crossingAlarm,
                             repeatValidation = uiState.crossingRepeatValidation,
-                            onSetSound       = { onAction(AdvancedAction.SetCrossingSoundEnabled(it)) },
-                            onSetVibration   = { onAction(AdvancedAction.SetCrossingVibrationEnabled(it)) },
-                            onSetRepeat      = { onAction(AdvancedAction.SetCrossingRepeatEnabled(it)) },
-                            onUpdateRepeat   = { onAction(AdvancedAction.UpdateCrossingRepeatSeconds(it)) },
+                            onSetSound = { onAction(AdvancedAction.SetCrossingSoundEnabled(it)) },
+                            onSetVibration = {
+                                onAction(
+                                    AdvancedAction.SetCrossingVibrationEnabled(
+                                        it
+                                    )
+                                )
+                            },
+                            onSetRepeat = { onAction(AdvancedAction.SetCrossingRepeatEnabled(it)) },
+                            onUpdateRepeat = {
+                                onAction(
+                                    AdvancedAction.UpdateCrossingRepeatSeconds(
+                                        it
+                                    )
+                                )
+                            },
                         )
                         DiagnosticsCard(uiState, onAction)
                     }
@@ -93,22 +117,22 @@ fun AdvancedSettingsScreen(
                     ThresholdCard(uiState, onAction)
                     MaxAltitudeAlertCard(uiState, onAction)
                     AlarmCard(
-                        title            = "Threshold alarm",
-                        config           = uiState.thresholdAlarm,
+                        title = "Threshold alarm",
+                        config = uiState.thresholdAlarm,
                         repeatValidation = uiState.thresholdRepeatValidation,
-                        onSetSound       = { onAction(AdvancedAction.SetThresholdSoundEnabled(it)) },
-                        onSetVibration   = { onAction(AdvancedAction.SetThresholdVibrationEnabled(it)) },
-                        onSetRepeat      = { onAction(AdvancedAction.SetThresholdRepeatEnabled(it)) },
-                        onUpdateRepeat   = { onAction(AdvancedAction.UpdateThresholdRepeatSeconds(it)) },
+                        onSetSound = { onAction(AdvancedAction.SetThresholdSoundEnabled(it)) },
+                        onSetVibration = { onAction(AdvancedAction.SetThresholdVibrationEnabled(it)) },
+                        onSetRepeat = { onAction(AdvancedAction.SetThresholdRepeatEnabled(it)) },
+                        onUpdateRepeat = { onAction(AdvancedAction.UpdateThresholdRepeatSeconds(it)) },
                     )
                     AlarmCard(
-                        title            = "Crossing alarm",
-                        config           = uiState.crossingAlarm,
+                        title = "Crossing alarm",
+                        config = uiState.crossingAlarm,
                         repeatValidation = uiState.crossingRepeatValidation,
-                        onSetSound       = { onAction(AdvancedAction.SetCrossingSoundEnabled(it)) },
-                        onSetVibration   = { onAction(AdvancedAction.SetCrossingVibrationEnabled(it)) },
-                        onSetRepeat      = { onAction(AdvancedAction.SetCrossingRepeatEnabled(it)) },
-                        onUpdateRepeat   = { onAction(AdvancedAction.UpdateCrossingRepeatSeconds(it)) },
+                        onSetSound = { onAction(AdvancedAction.SetCrossingSoundEnabled(it)) },
+                        onSetVibration = { onAction(AdvancedAction.SetCrossingVibrationEnabled(it)) },
+                        onSetRepeat = { onAction(AdvancedAction.SetCrossingRepeatEnabled(it)) },
+                        onUpdateRepeat = { onAction(AdvancedAction.UpdateCrossingRepeatSeconds(it)) },
                     )
                     DiagnosticsCard(uiState, onAction)
                 }
@@ -116,6 +140,8 @@ fun AdvancedSettingsScreen(
         }
     }
 }
+
+// ─── Threshold card ───────────────────────────────────────────────────────────
 
 @Composable
 private fun ThresholdCard(uiState: MainUiState, onAction: (AdvancedAction) -> Unit) {
@@ -127,21 +153,23 @@ private fun ThresholdCard(uiState: MainUiState, onAction: (AdvancedAction) -> Un
             Text("Approach threshold")
             val v = uiState.approachThresholdValidation
             OutlinedTextField(
-                value         = uiState.approachThresholdFeet,
+                value = uiState.approachThresholdFeet,
                 onValueChange = { onAction(AdvancedAction.SetDistanceThresholdFeet(it)) },
-                label         = { Text("Distance (ft)") },
-                singleLine    = true,
-                isError       = !v.isValid,
+                label = { Text("Distance (ft)") },
+                singleLine = true,
+                isError = !v.isValid,
                 supportingText = v.errorMessage?.let { { Text(it) } },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Number,
-                    imeAction    = ImeAction.Done,
+                    imeAction = ImeAction.Done,
                 ),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
     }
 }
+
+// ─── Max altitude alert card ──────────────────────────────────────────────────
 
 @Composable
 private fun MaxAltitudeAlertCard(uiState: MainUiState, onAction: (AdvancedAction) -> Unit) {
@@ -153,7 +181,7 @@ private fun MaxAltitudeAlertCard(uiState: MainUiState, onAction: (AdvancedAction
             Text("Max altitude alert")
 
             SwitchRow(
-                title   = "Enable",
+                title = "Enable",
                 checked = uiState.maxAltitudeEnabled,
                 onCheckedChange = { onAction(AdvancedAction.SetMaxAltitudeAlertEnabled(it)) }
             )
@@ -161,45 +189,45 @@ private fun MaxAltitudeAlertCard(uiState: MainUiState, onAction: (AdvancedAction
             if (uiState.maxAltitudeEnabled) {
                 val threshV = uiState.maxAltitudeThresholdValidation
                 OutlinedTextField(
-                    value         = uiState.maxAltitudeThresholdFeet,
+                    value = uiState.maxAltitudeThresholdFeet,
                     onValueChange = { onAction(AdvancedAction.UpdateMaxAltitudeThreshold(it)) },
-                    label         = { Text("Warn within (ft) of previous max") },
-                    singleLine    = true,
-                    isError       = !threshV.isValid,
+                    label = { Text("Exceedance margin (ft)") },
+                    singleLine = true,
+                    isError = !threshV.isValid,
                     supportingText = threshV.errorMessage?.let { { Text(it) } },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number,
-                        imeAction    = ImeAction.Next,
+                        imeAction = ImeAction.Next,
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 val minAltV = uiState.maxAltitudeMinAltitudeValidation
                 OutlinedTextField(
-                    value         = uiState.maxAltitudeMinAltitudeFeet,
+                    value = uiState.maxAltitudeMinAltitudeFeet,
                     onValueChange = { onAction(AdvancedAction.UpdateMaxAltitudeMinAltitude(it)) },
-                    label         = { Text("Minimum altitude to track (ft)") },
-                    singleLine    = true,
-                    isError       = !minAltV.isValid,
+                    label = { Text("Minimum altitude to track (ft)") },
+                    singleLine = true,
+                    isError = !minAltV.isValid,
                     supportingText = minAltV.errorMessage?.let { { Text(it) } }
                         ?: { Text("Avoids triggering near the ground") },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number,
-                        imeAction    = ImeAction.Next,
+                        imeAction = ImeAction.Next,
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 val silenceV = uiState.maxAltitudeSilenceValidation
                 OutlinedTextField(
-                    value         = uiState.maxAltitudeSilenceMinutes,
+                    value = uiState.maxAltitudeSilenceMinutes,
                     onValueChange = { onAction(AdvancedAction.UpdateMaxAltitudeSilenceMinutes(it)) },
-                    label         = { Text("Silence duration (minutes)") },
-                    singleLine    = true,
-                    isError       = !silenceV.isValid,
+                    label = { Text("Silence duration (minutes)") },
+                    singleLine = true,
+                    isError = !silenceV.isValid,
                     supportingText = silenceV.errorMessage?.let { { Text(it) } }
                         ?: { Text("How long the notification silence action lasts") },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number,
-                        imeAction    = ImeAction.Done,
+                        imeAction = ImeAction.Done,
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -207,6 +235,8 @@ private fun MaxAltitudeAlertCard(uiState: MainUiState, onAction: (AdvancedAction
         }
     }
 }
+
+// ─── Alarm card ───────────────────────────────────────────────────────────────
 
 @Composable
 private fun AlarmCard(
@@ -224,20 +254,20 @@ private fun AlarmCard(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(title)
-            SwitchRow("Sound",     config.soundEnabled,     onSetSound)
+            SwitchRow("Sound", config.soundEnabled, onSetSound)
             SwitchRow("Vibration", config.vibrationEnabled, onSetVibration)
-            SwitchRow("Repeat",    config.repeatEnabled,    onSetRepeat)
+            SwitchRow("Repeat", config.repeatEnabled, onSetRepeat)
             if (config.repeatEnabled) {
                 OutlinedTextField(
-                    value         = config.repeatSeconds,
+                    value = config.repeatSeconds,
                     onValueChange = onUpdateRepeat,
-                    label         = { Text("Repeat interval (s)") },
-                    singleLine    = true,
-                    isError       = !repeatValidation.isValid,
+                    label = { Text("Repeat interval (s)") },
+                    singleLine = true,
+                    isError = !repeatValidation.isValid,
                     supportingText = repeatValidation.errorMessage?.let { { Text(it) } },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number,
-                        imeAction    = ImeAction.Done,
+                        imeAction = ImeAction.Done,
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -245,6 +275,8 @@ private fun AlarmCard(
         }
     }
 }
+
+// ─── Diagnostics card ─────────────────────────────────────────────────────────
 
 @Composable
 private fun DiagnosticsCard(uiState: MainUiState, onAction: (AdvancedAction) -> Unit) {
@@ -255,13 +287,15 @@ private fun DiagnosticsCard(uiState: MainUiState, onAction: (AdvancedAction) -> 
         ) {
             Text("Diagnostics")
             SwitchRow(
-                title           = "Warn on low GPS accuracy",
-                checked         = uiState.warnOnLowAccuracy,
+                title = "Warn on low GPS accuracy",
+                checked = uiState.warnOnLowAccuracy,
                 onCheckedChange = { onAction(AdvancedAction.SetWarnOnLowAccuracy(it)) }
             )
         }
     }
 }
+
+// ─── Shared ───────────────────────────────────────────────────────────────────
 
 @Composable
 private fun SwitchRow(
@@ -270,9 +304,9 @@ private fun SwitchRow(
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
-        modifier              = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment     = Alignment.CenterVertically,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, modifier = Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onCheckedChange)

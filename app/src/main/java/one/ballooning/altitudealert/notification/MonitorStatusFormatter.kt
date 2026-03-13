@@ -3,10 +3,11 @@ package one.ballooning.altitudealert.notification
 import androidx.annotation.ColorRes
 import androidx.annotation.DrawableRes
 import one.ballooning.altitudealert.R
-import one.ballooning.altitudealert.monitor.AlertStatus
-import one.ballooning.altitudealert.monitor.AltitudeSourceType
-import one.ballooning.altitudealert.monitor.GpsAccuracyStatus
-import one.ballooning.altitudealert.monitor.MonitorState
+import one.ballooning.altitudealert.data.model.AlertConfig
+import one.ballooning.altitudealert.domain.AlertStatus
+import one.ballooning.altitudealert.domain.AltitudeSourceType
+import one.ballooning.altitudealert.domain.GpsAccuracyStatus
+import one.ballooning.altitudealert.domain.MonitorState
 
 data class FormattedStatus(
     val title: String,
@@ -18,10 +19,10 @@ data class FormattedStatus(
 
 object MonitorStatusFormatter {
 
-    fun format(state: MonitorState): FormattedStatus {
+    fun format(state: MonitorState, config: AlertConfig): FormattedStatus {
         val overallStatus = state.alertResult.overallStatus
         return FormattedStatus(
-            title = formatTitle(state),
+            title = formatTitle(config),
             body = formatBody(state, overallStatus),
             bigText = formatBigText(state),
             iconRes = iconRes(overallStatus),
@@ -29,14 +30,12 @@ object MonitorStatusFormatter {
         )
     }
 
-    // Title: the configured band — always visible on lock screen
-    private fun formatTitle(state: MonitorState): String =
+    private fun formatTitle(config: AlertConfig): String =
         "Band %,d – %,d ft".format(
-            state.configuredLowerLimitFeet.toInt(),
-            state.configuredUpperLimitFeet.toInt(),
+            config.lowerLimitFeet.toInt(),
+            config.upperLimitFeet.toInt(),
         )
 
-    // Body: one-line summary for the collapsed notification
     private fun formatBody(state: MonitorState, overallStatus: AlertStatus): String {
         val alt = formatAltitude(state)
         return when (overallStatus) {
@@ -46,7 +45,6 @@ object MonitorStatusFormatter {
         }
     }
 
-    // Big text: expanded detail
     private fun formatBigText(state: MonitorState): String = buildString {
         append("Altitude: ${formatAltitude(state)}")
 
@@ -62,8 +60,6 @@ object MonitorStatusFormatter {
 
         formatSourceNote(state).takeIf { it.isNotEmpty() }?.let { append("\n$it") }
     }
-
-    // ─── Helpers ──────────────────────────────────────────────────────────────
 
     private fun formatAltitude(state: MonitorState): String =
         if (state.flightLevel != null) "FL%03d".format(state.flightLevel)

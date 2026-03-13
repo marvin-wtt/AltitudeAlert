@@ -13,20 +13,29 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import androidx.core.content.getSystemService
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
-import one.ballooning.altitudealert.data.AlertConfig
-import one.ballooning.altitudealert.data.AppSettings
-import one.ballooning.altitudealert.data.altitudeFlow
-import one.ballooning.altitudealert.monitor.AlertResult
-import one.ballooning.altitudealert.monitor.AlertStatus
-import one.ballooning.altitudealert.monitor.AltitudeMonitor
-import one.ballooning.altitudealert.monitor.MonitorState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.sample
+import kotlinx.coroutines.launch
+
+import one.ballooning.altitudealert.AltitudeAlertApplication
+import one.ballooning.altitudealert.data.model.AlertConfig
+import one.ballooning.altitudealert.domain.AlertResult
+import one.ballooning.altitudealert.domain.AlertStatus
+import one.ballooning.altitudealert.domain.AltitudeMonitor
+import one.ballooning.altitudealert.domain.MonitorState
 import one.ballooning.altitudealert.notification.MonitorNotification
 
 class MonitorService : Service() {
 
-    // ─── Binding ──────────────────────────────────────────────────────────────
+    // ─── Binder ───────────────────────────────────────────────────────────────
 
     inner class MonitorBinder : Binder() {
         val stateFlow: StateFlow<MonitorState?> get() = _stateFlow.asStateFlow()
@@ -35,19 +44,13 @@ class MonitorService : Service() {
     private val binder = MonitorBinder()
     override fun onBind(intent: Intent): IBinder = binder
 
-    // ─── Fields ───────────────────────────────────────────────────────────────
+    // ─── State ────────────────────────────────────────────────────────────────
 
     private val _stateFlow = MutableStateFlow<MonitorState?>(null)
-
-    private lateinit var settings: AppSettings
-    private lateinit var monitor: AltitudeMonitor
-    private lateinit var notification: MonitorNotification
-
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private var mediaPlayer: MediaPlayer? = null
     private var previousBandResult: AlertResult? = null
-
     private var lastAlertedMaxFeet: Float? = null
     private var silencedUntilMs: Long? = null
 
@@ -60,23 +63,43 @@ class MonitorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        settings = AppSettings(applicationContext)
-        monitor = AltitudeMonitor(altitudeFlow(applicationContext), settings)
-        notification = MonitorNotification(applicationContext)
+        val app = application as AltitudeAlertApplication
+        val notification = MonitorNotification(applicationContext)
+        val monitor = AltitudeMonitor(
+            readings = app.altitudeDataSource.readings,
+            config = app.configRepository.configFlow,
+        )
+
         MonitorNotification.createChannels(applicationContext)
         startForeground(MonitorNotification.NOTIFICATION_ID_LIVE, notification.buildInitial())
-        scope.launch { collectMonitorState() }
+
+        val combined = monitor.monitorState()
+            .combine(app.configRepository.configFlow) { state, config -> state to config }
+
+        // Alerts fire on every emission — responsiveness matters here.
+        scope.launch {
+            combined.catch { e -> Log.e(TAG, "Flow error", e) }.collect { (state, config) ->
+                    _stateFlow.value = state
+                    handleBandAlerts(state, config)
+                    handleMaxAltitudeAlert(state, config)
+                }
+            Log.w(TAG, "Collection ended unexpectedly")
+        }
+
+        // Notification updates are throttled — Android caps updates at 5/sec and
+        // the user doesn't need sub-second altitude updates in the status bar.
+        scope.launch {
+            combined.sample(NOTIFICATION_UPDATE_INTERVAL_MS)
+                .catch { e -> Log.e(TAG, "Notification flow error", e) }
+                .collect { (state, config) -> notification.update(state, config) }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_SILENCE_MAX_ALTITUDE -> {
-                val minutes = intent.getIntExtra(EXTRA_SILENCE_MINUTES, 5)
-                silencedUntilMs = System.currentTimeMillis() + minutes * 60_000L
-                // Advance the baseline so a new alert requires climbing a full
-                // margin above wherever the balloon is right now.
-                lastAlertedMaxFeet = _stateFlow.value?.sessionMaxFeet
-            }
+        if (intent?.action == ACTION_SILENCE_MAX_ALTITUDE) {
+            val minutes = intent.getIntExtra(EXTRA_SILENCE_MINUTES, 5)
+            silencedUntilMs = System.currentTimeMillis() + minutes * 60_000L
+            lastAlertedMaxFeet = _stateFlow.value?.sessionMaxFeet
         }
         return START_STICKY
     }
@@ -85,19 +108,6 @@ class MonitorService : Service() {
         scope.cancel()
         releasePlayer()
         super.onDestroy()
-    }
-
-    // ─── Collection ───────────────────────────────────────────────────────────
-
-    private suspend fun collectMonitorState() {
-        monitor.monitorState().combine(settings.configFlow) { state, config -> state to config }
-            .catch { e -> Log.e(TAG, "Flow error", e) }.collect { (state, config) ->
-                _stateFlow.value = state
-                notification.update(state)
-                handleBandAlerts(state, config)
-                handleMaxAltitudeAlert(state, config)
-            }
-        Log.w(TAG, "Collection ended unexpectedly")
     }
 
     // ─── Band alerts ──────────────────────────────────────────────────────────
@@ -112,7 +122,9 @@ class MonitorService : Service() {
         if (worsened) {
             if (config.vibrate) vibrate(current.overallStatus)
             config.alarmSoundUri?.let {
-                playSound(it, looping = current.overallStatus == AlertStatus.CROSSED)
+                playSound(
+                    it, looping = current.overallStatus == AlertStatus.CROSSED
+                )
             }
         }
         previousBandResult = current
@@ -122,6 +134,8 @@ class MonitorService : Service() {
         if (current == null) return false
         return current.ordinal > (prev ?: AlertStatus.CLEAR).ordinal
     }
+
+    // ─── Max altitude alert ───────────────────────────────────────────────────
 
     private fun handleMaxAltitudeAlert(state: MonitorState, config: AlertConfig) {
         val cfg = config.maxAltitude
@@ -133,14 +147,18 @@ class MonitorService : Service() {
         }
 
         if (state.sessionMaxFeet < cfg.minAltitudeFeet) return
-
         val baseline = lastAlertedMaxFeet
-        if (baseline == null || state.sessionMaxFeet > baseline + cfg.exceedanceMarginFeet) {
-            lastAlertedMaxFeet = state.sessionMaxFeet
-            notification.postMaxAltitudeNotification(state, cfg.silenceDurationMinutes)
-            if (config.vibrate) vibrate(AlertStatus.APPROACHING)
-            config.alarmSoundUri?.let { playSound(it, looping = false) }
-        }
+        if (baseline != null && state.sessionMaxFeet <= baseline + cfg.exceedanceMarginFeet) return
+
+        Log.d(TAG, "alertEnabled=${config.alertsEnabled}")
+
+        lastAlertedMaxFeet = state.sessionMaxFeet
+        silencedUntilMs = System.currentTimeMillis() + (10 * 60 * 1000)
+
+        val notification = MonitorNotification(applicationContext)
+        notification.postMaxAltitudeNotification(state, cfg.silenceDurationMinutes)
+        if (config.vibrate) vibrate(AlertStatus.APPROACHING)
+        config.alarmSoundUri?.let { playSound(it, looping = false) }
     }
 
     // ─── Sound & vibration ────────────────────────────────────────────────────
@@ -176,11 +194,10 @@ class MonitorService : Service() {
 
     companion object {
         private const val TAG = "MonitorService"
-
         const val ACTION_SILENCE_MAX_ALTITUDE = "one.ballooning.altitudealert.SILENCE_MAX_ALTITUDE"
         const val EXTRA_SILENCE_MINUTES = "silence_minutes"
-
         private val VIBRATE_SHORT = longArrayOf(0, 150, 100, 150)
         private val VIBRATE_LONG = longArrayOf(0, 500, 150, 500, 150, 500)
+        private const val NOTIFICATION_UPDATE_INTERVAL_MS = 500L
     }
 }

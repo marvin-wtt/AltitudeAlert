@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.GpsOff
@@ -21,10 +22,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import one.ballooning.altitudealert.data.PreferredSource
-import one.ballooning.altitudealert.monitor.AlertStatus
-import one.ballooning.altitudealert.monitor.AltitudeSourceType
-import one.ballooning.altitudealert.monitor.GpsAccuracyStatus
+import one.ballooning.altitudealert.data.model.PreferredSource
+import one.ballooning.altitudealert.domain.AlertStatus
+import one.ballooning.altitudealert.domain.AltitudeSourceType
+import one.ballooning.altitudealert.domain.GpsAccuracyStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,8 +37,8 @@ fun MainScreen(
     Scaffold(
         modifier = modifier, topBar = {
             TopAppBar(title = { Text("Altitude Alert") }, actions = {
-                TextButton(onClick = { onAction(MainAction.NavigateToAdvancedSettings) }) {
-                    Text("Advanced")
+                IconButton(onClick = { onAction(MainAction.NavigateToAdvancedSettings) }) {
+                    Icon(Icons.Default.Settings, contentDescription = "Settings")
                 }
             })
         }) { padding ->

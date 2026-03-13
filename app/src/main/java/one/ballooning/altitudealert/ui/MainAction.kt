@@ -1,8 +1,6 @@
 package one.ballooning.altitudealert.ui
 
-import one.ballooning.altitudealert.data.PreferredSource
-
-// ─── Main screen actions ──────────────────────────────────────────────────────
+import one.ballooning.altitudealert.data.model.PreferredSource
 
 sealed class MainAction {
     object ToggleAlerts : MainAction()
@@ -18,8 +16,6 @@ sealed class MainAction {
     data class UpdateQnh(val value: String) : MainAction()
 }
 
-// ─── Advanced settings actions ────────────────────────────────────────────────
-
 sealed class AdvancedAction {
     object NavigateBack : AdvancedAction()
     data class SetDistanceThresholdFeet(val value: String) : AdvancedAction()
@@ -32,8 +28,6 @@ sealed class AdvancedAction {
     data class SetCrossingRepeatEnabled(val enabled: Boolean) : AdvancedAction()
     data class UpdateCrossingRepeatSeconds(val value: String) : AdvancedAction()
     data class SetWarnOnLowAccuracy(val enabled: Boolean) : AdvancedAction()
-
-    // Max altitude alert settings
     data class SetMaxAltitudeAlertEnabled(val enabled: Boolean) : AdvancedAction()
     data class UpdateMaxAltitudeThreshold(val value: String) : AdvancedAction()
     data class UpdateMaxAltitudeMinAltitude(val value: String) : AdvancedAction()

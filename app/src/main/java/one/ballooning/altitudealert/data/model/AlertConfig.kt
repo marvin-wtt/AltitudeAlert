@@ -1,4 +1,4 @@
-package one.ballooning.altitudealert.data
+package one.ballooning.altitudealert.data.model
 
 import kotlinx.serialization.Serializable
 
@@ -7,12 +7,10 @@ enum class PreferredSource { BAROMETER, GPS }
 @Serializable
 data class MaxAltitudeConfig(
     val enabled: Boolean = false,
-    val exceedanceMarginFeet: Float = 500f,
-    val minAltitudeFeet: Float = 2000f,
-    val silenceDurationMinutes: Int = 60,
+    val exceedanceMarginFeet: Float = 50f,
+    val minAltitudeFeet: Float = 500f,
+    val silenceDurationMinutes: Int = 5,
 )
-
-// ─── Main alert config ────────────────────────────────────────────────────────
 
 @Serializable
 data class AlertConfig(
@@ -25,5 +23,4 @@ data class AlertConfig(
     val maxAltitude: MaxAltitudeConfig = MaxAltitudeConfig(),
     val vibrate: Boolean = true,
     val alarmSoundUri: String? = null,
-    val alertsEnabled: Boolean = false,
 )

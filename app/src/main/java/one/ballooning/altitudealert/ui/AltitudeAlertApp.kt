@@ -21,19 +21,19 @@ fun AltitudeAlertApp(
     val onAction: (MainAction) -> Unit = { action ->
         when (action) {
             MainAction.RequestPermissions -> onRequestPermissions()
-            MainAction.OpenAppSettings    -> onOpenAppSettings()
-            else                          -> viewModel.onAction(action)
+            MainAction.OpenAppSettings -> onOpenAppSettings()
+            else -> viewModel.onAction(action)
         }
     }
 
     when (uiState.currentScreen) {
         AppScreen.MAIN -> MainScreen(
-            uiState  = uiState,
+            uiState = uiState,
             onAction = onAction,
             modifier = safeModifier,
         )
         AppScreen.ADVANCED_SETTINGS -> AdvancedSettingsScreen(
-            uiState  = uiState,
+            uiState = uiState,
             onAction = viewModel::onAdvancedAction,
             modifier = safeModifier,
         )

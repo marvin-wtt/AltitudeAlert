@@ -33,7 +33,8 @@ object Validators {
         val base = altitudeFeet(lowerValue, "Lower limit")
         if (!base.isValid) return base
         val lower = lowerValue.toInt()
-        val upper = upperValue.toIntOrNull() ?: return ValidationResult.Valid  // upper invalid separately
+        val upper =
+            upperValue.toIntOrNull() ?: return ValidationResult.Valid  // upper invalid separately
         if (lower >= upper) return ValidationResult.Invalid("Must be below the upper limit")
         return ValidationResult.Valid
     }
@@ -42,7 +43,8 @@ object Validators {
         val base = altitudeFeet(upperValue, "Upper limit")
         if (!base.isValid) return base
         val upper = upperValue.toInt()
-        val lower = lowerValue.toIntOrNull() ?: return ValidationResult.Valid  // lower invalid separately
+        val lower =
+            lowerValue.toIntOrNull() ?: return ValidationResult.Valid  // lower invalid separately
         if (upper <= lower) return ValidationResult.Invalid("Must be above the lower limit")
         return ValidationResult.Valid
     }

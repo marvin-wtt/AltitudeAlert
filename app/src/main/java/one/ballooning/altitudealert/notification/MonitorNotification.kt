@@ -9,93 +9,66 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import androidx.core.content.getSystemService
 import one.ballooning.altitudealert.R
-import one.ballooning.altitudealert.monitor.MonitorState
+import one.ballooning.altitudealert.data.model.AlertConfig
+import one.ballooning.altitudealert.domain.MonitorState
 import one.ballooning.altitudealert.service.MonitorService
-import one.ballooning.altitudealert.MainActivity
+import one.ballooning.altitudealert.ui.MainActivity
 
 class MonitorNotification(private val context: Context) {
 
     private val manager = context.getSystemService<NotificationManager>()!!
 
-    // ─── Initial notification (shown before first reading arrives) ────────────
+    fun buildInitial(): Notification =
+        builder(CHANNEL_LIVE).setSmallIcon(R.drawable.ic_notification_clear)
+            .setContentTitle("Altitude Alert").setContentText("Acquiring altitude…").build()
 
-    fun buildInitial(): Notification {
-        return builder(CHANNEL_LIVE)
-            .setSmallIcon(R.drawable.ic_notification_clear)
-            .setContentTitle("Altitude Alert")
-            .setContentText("Acquiring altitude…")
-            .build()
-    }
-
-    // ─── Live status update (throttled by the service) ────────────────────────
-
-    fun update(state: MonitorState) {
-        val f = MonitorStatusFormatter.format(state)
+    fun update(state: MonitorState, config: AlertConfig) {
+        val f = MonitorStatusFormatter.format(state, config)
         manager.notify(
             NOTIFICATION_ID_LIVE,
-            builder(CHANNEL_LIVE)
-                .setSmallIcon(f.iconRes)
-                .setContentTitle(f.title)
+            builder(CHANNEL_LIVE).setSmallIcon(f.iconRes).setContentTitle(f.title)
                 .setContentText(f.body)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(f.bigText))
-                .setColor(context.getColor(f.colorRes))
-                .setColorized(true)
-                .build()
+                .setColor(context.getColor(f.colorRes)).setColorized(true).build()
         )
     }
 
-    // ─── Max altitude exceeded (posted once per exceedance event) ─────────────
-
     fun postMaxAltitudeNotification(state: MonitorState, silenceMinutes: Int) {
-        val maxFeet = state.sessionMaxFeet
-
         val silenceIntent = PendingIntent.getService(
-            context,
-            0,
+            context, 0,
             Intent(context, MonitorService::class.java).apply {
                 action = MonitorService.ACTION_SILENCE_MAX_ALTITUDE
                 putExtra(MonitorService.EXTRA_SILENCE_MINUTES, silenceMinutes)
             },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-
         manager.notify(
             NOTIFICATION_ID_MAX_ALTITUDE,
             NotificationCompat.Builder(context, CHANNEL_MAX_ALTITUDE)
                 .setSmallIcon(R.drawable.ic_notification_warning)
                 .setContentTitle("Maximum altitude exceeded")
-                .setContentText("Previous max: %,d ft".format(maxFeet.toInt()))
-                .setColor(context.getColor(R.color.notification_approaching))
-                .setColorized(true)
-                .setOngoing(false)
-                .setAutoCancel(false)
+                .setContentText("Session max: %,d ft".format(state.sessionMaxFeet.toInt()))
+                .setColor(context.getColor(R.color.notification_approaching)).setColorized(true)
+                .setOngoing(false).setAutoCancel(false)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .addAction(
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC).addAction(
                     R.drawable.ic_notification_clear,
                     "Silence for $silenceMinutes min",
                     silenceIntent
-                )
-                .build()
+                ).build()
         )
     }
 
-    // ─── Shared builder ───────────────────────────────────────────────────────
-
     private fun builder(channelId: String): NotificationCompat.Builder {
         val tapIntent = PendingIntent.getActivity(
-            context,
-            0,
+            context, 0,
             Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
             },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        return NotificationCompat.Builder(context, channelId)
-            .setContentIntent(tapIntent)
-            .setOnlyAlertOnce(true)
-            .setOngoing(true)
-            .setShowWhen(false)
+        return NotificationCompat.Builder(context, channelId).setContentIntent(tapIntent)
+            .setOnlyAlertOnce(true).setOngoing(true).setShowWhen(false)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
     }
@@ -103,7 +76,6 @@ class MonitorNotification(private val context: Context) {
     companion object {
         const val NOTIFICATION_ID_LIVE = 1
         const val NOTIFICATION_ID_MAX_ALTITUDE = 2
-
         private const val CHANNEL_LIVE = "altitude_monitor"
         private const val CHANNEL_MAX_ALTITUDE = "max_altitude_alert"
 
@@ -111,24 +83,18 @@ class MonitorNotification(private val context: Context) {
             val manager = context.getSystemService<NotificationManager>()!!
             manager.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_LIVE,
-                    "Altitude Monitor",
-                    NotificationManager.IMPORTANCE_LOW
+                    CHANNEL_LIVE, "Altitude Monitor", NotificationManager.IMPORTANCE_LOW
                 ).apply {
                     description = "Live altitude while monitoring is active"
                     setShowBadge(false)
-                }
-            )
+                })
             manager.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_MAX_ALTITUDE,
-                    "Max Altitude Alert",
-                    NotificationManager.IMPORTANCE_HIGH
+                    CHANNEL_MAX_ALTITUDE, "Max Altitude Alert", NotificationManager.IMPORTANCE_HIGH
                 ).apply {
                     description = "Alert when maximum altitude is exceeded"
                     setShowBadge(true)
-                }
-            )
+                })
         }
     }
 }
