@@ -37,9 +37,15 @@ class MonitorService : Service() {
     inner class MonitorBinder : Binder() {
         val stateFlow: StateFlow<MonitorState?> get() = _stateFlow.asStateFlow()
         val crossingMutedFlow: StateFlow<Boolean> get() = _crossingMuted.asStateFlow()
+        val alertsEnabledFlow: StateFlow<Boolean> get() = _alertsEnabled.asStateFlow()
         fun setAlertsEnabled(enabled: Boolean) {
             _alertsEnabled.value = enabled
             if (enabled) {
+                // Explicitly start the service so it survives the app going to background.
+                // BIND_AUTO_CREATE alone would let Android kill it when the activity unbinds.
+                applicationContext.startService(
+                    Intent(applicationContext, MonitorService::class.java)
+                )
                 startForeground(
                     MonitorNotification.NOTIFICATION_ID_LIVE, notification.buildInitial()
                 )
@@ -93,7 +99,6 @@ class MonitorService : Service() {
         )
 
         MonitorNotification.createChannels(applicationContext)
-        startForeground(MonitorNotification.NOTIFICATION_ID_LIVE, notification.buildInitial())
 
         val combined = monitor.monitorState()
             .combine(app.configRepository.configFlow) { state, config -> state to config }
@@ -127,9 +132,19 @@ class MonitorService : Service() {
         return START_STICKY
     }
 
+    override fun onUnbind(intent: Intent): Boolean {
+        // If alerts are off when the app closes, there's nothing to keep alive.
+        // If alerts are on, the service was explicitly started and stays running.
+        if (!_alertsEnabled.value) stopSelf()
+        return false
+    }
+
     override fun onDestroy() {
         scope.cancel()
         soundPlayer.release()
+        // If alerts are off the notification was never meant to persist — cancel it.
+        // When alerts are on, stopForeground already removed it before stopSelf was called.
+        if (!_alertsEnabled.value) notification.cancelLiveNotification()
         super.onDestroy()
     }
 

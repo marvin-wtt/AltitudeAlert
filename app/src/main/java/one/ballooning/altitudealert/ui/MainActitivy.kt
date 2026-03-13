@@ -1,4 +1,4 @@
-package one.ballooning.altitudealert
+package one.ballooning.altitudealert.ui
 
 import android.Manifest
 import android.content.Intent
@@ -18,9 +18,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import one.ballooning.altitudealert.AltitudeAlertApplication
 import one.ballooning.altitudealert.service.MonitorService
-import one.ballooning.altitudealert.ui.AltitudeAlertApp
-import one.ballooning.altitudealert.ui.MainViewModel
 import one.ballooning.altitudealert.ui.theme.AltitudeAlertTheme
 
 class MainActivity : ComponentActivity() {

@@ -165,7 +165,14 @@ class MainViewModel(
     val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             monitorBinder = binder as MonitorService.MonitorBinder
-            monitorBinder?.setAlertsEnabled(_uiState.value.alertsEnabled)
+            viewModelScope.launch {
+                // Sync ViewModel FROM service — not the other way around.
+                // If the service was already running (e.g. app restarted from notification),
+                // its alertsEnabled state is the truth we should reflect in the UI.
+                monitorBinder?.alertsEnabledFlow?.collect { enabled ->
+                    _uiState.update { it.copy(alertsEnabled = enabled) }
+                }
+            }
             viewModelScope.launch {
                 monitorBinder?.stateFlow?.collect { state ->
                     if (state != null) _uiState.update { it.copy(liveStatus = state.toLiveStatus()) }
@@ -251,49 +258,35 @@ class MainViewModel(
 
     fun onAdvancedAction(action: AdvancedAction) {
         when (action) {
-            AdvancedAction.NavigateBack -> _uiState.update { it.copy(currentScreen = AppScreen.MAIN) }
+            AdvancedAction.NavigateBack ->
+                _uiState.update { it.copy(currentScreen = AppScreen.MAIN) }
 
-            is AdvancedAction.SetDistanceThresholdFeet -> updateAndPersist {
-                it.copy(
-                    approachThresholdFeet = action.value
-                )
-            }
+            is AdvancedAction.SetDistanceThresholdFeet ->
+                updateAndPersist { it.copy(approachThresholdFeet = action.value) }
 
-            is AdvancedAction.SetThresholdAlertEnabled -> updateAndPersist {
-                it.copy(
-                    thresholdAlertEnabled = action.enabled
-                )
-            }
+            is AdvancedAction.SetThresholdAlertEnabled ->
+                updateAndPersist { it.copy(thresholdAlertEnabled = action.enabled) }
 
-            is AdvancedAction.SetSoundEnabled -> updateAndPersist { it.copy(soundEnabled = action.enabled) }
+            is AdvancedAction.SetSoundEnabled ->
+                updateAndPersist { it.copy(soundEnabled = action.enabled) }
 
-            is AdvancedAction.SetVibrateEnabled -> updateAndPersist { it.copy(vibrateEnabled = action.enabled) }
+            is AdvancedAction.SetVibrateEnabled ->
+                updateAndPersist { it.copy(vibrateEnabled = action.enabled) }
 
-            is AdvancedAction.SetWarnOnLowAccuracy -> _uiState.update { it.copy(warnOnLowAccuracy = action.enabled) }
+            is AdvancedAction.SetWarnOnLowAccuracy ->
+                _uiState.update { it.copy(warnOnLowAccuracy = action.enabled) }
 
-            is AdvancedAction.SetMaxAltitudeAlertEnabled -> updateAndPersist {
-                it.copy(
-                    maxAltitudeEnabled = action.enabled
-                )
-            }
+            is AdvancedAction.SetMaxAltitudeAlertEnabled ->
+                updateAndPersist { it.copy(maxAltitudeEnabled = action.enabled) }
 
-            is AdvancedAction.UpdateMaxAltitudeThreshold -> updateAndPersist {
-                it.copy(
-                    maxAltitudeThresholdFeet = action.value
-                )
-            }
+            is AdvancedAction.UpdateMaxAltitudeThreshold ->
+                updateAndPersist { it.copy(maxAltitudeThresholdFeet = action.value) }
 
-            is AdvancedAction.UpdateMaxAltitudeMinAltitude -> updateAndPersist {
-                it.copy(
-                    maxAltitudeMinAltitudeFeet = action.value
-                )
-            }
+            is AdvancedAction.UpdateMaxAltitudeMinAltitude ->
+                updateAndPersist { it.copy(maxAltitudeMinAltitudeFeet = action.value) }
 
-            is AdvancedAction.UpdateMaxAltitudeSilenceMinutes -> updateAndPersist {
-                it.copy(
-                    maxAltitudeSilenceMinutes = action.value
-                )
-            }
+            is AdvancedAction.UpdateMaxAltitudeSilenceMinutes ->
+                updateAndPersist { it.copy(maxAltitudeSilenceMinutes = action.value) }
         }
     }
 
@@ -315,8 +308,13 @@ class MainViewModel(
     }
 
     private fun setAlertsEnabled(enabled: Boolean) {
-        _uiState.update { it.copy(alertsEnabled = enabled) }
-        monitorBinder?.setAlertsEnabled(enabled)
+        // Push to service — the alertsEnabledFlow collector above will update UI state.
+        // If not yet connected (no binder), update UI directly so the toggle feels responsive.
+        if (monitorBinder != null) {
+            monitorBinder?.setAlertsEnabled(enabled)
+        } else {
+            _uiState.update { it.copy(alertsEnabled = enabled) }
+        }
     }
 
     private fun updateAndPersist(transform: (MainUiState) -> MainUiState) {
