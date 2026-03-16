@@ -14,6 +14,9 @@ class AlarmSoundPlayer(private val scope: CoroutineScope) {
     private var crossingJob: Job? = null
     private var maxAltitudeJob: Job? = null
 
+    private var crossingDesired = false
+    private var maxAltitudeDesired = false
+
     // ── One-shot ──────────────────────────────────────────────────────────────
 
     fun playThreshold() {
@@ -25,10 +28,46 @@ class AlarmSoundPlayer(private val scope: CoroutineScope) {
         }
     }
 
-    // ── Crossing alarm (band limit exceeded) ──────────────────────────────────
+    // ── Intent setters ────────────────────────────────────────────────────────
+
     fun startCrossing() {
+        crossingDesired = true
+        sync()
+    }
+
+    fun stopCrossing() {
+        crossingDesired = false
+        sync()
+    }
+
+    fun startMaxAltitude() {
+        maxAltitudeDesired = true
+        sync()
+    }
+
+    fun stopMaxAltitude() {
+        maxAltitudeDesired = false
+        sync()
+    }
+
+    // ── Priority sync ─────────────────────────────────────────────────────────
+
+    private fun sync() {
+        when {
+            crossingDesired -> startCrossingJob()
+            maxAltitudeDesired -> startMaxAltitudeJob();
+
+            else -> {
+                cancelCrossingJob()
+                cancelMaxAltitudeJob()
+            }
+        }
+    }
+
+    private fun startCrossingJob() {
+        cancelMaxAltitudeJob()
         if (crossingJob?.isActive == true) return
-        if (maxAltitudeJob?.isActive == true) return   // no parallel alarms
+
         crossingJob = scope.launch {
             while (isActive) {
                 repeat(2) {
@@ -45,19 +84,10 @@ class AlarmSoundPlayer(private val scope: CoroutineScope) {
         }
     }
 
-    fun stopCrossing() {
-        crossingJob?.cancel()
-        crossingJob = null
-        toneGen.stopTone()
-    }
+    private fun startMaxAltitudeJob() {
+        cancelCrossingJob()
+        if (maxAltitudeJob?.isActive == true) return;
 
-    val isCrossingActive: Boolean get() = crossingJob?.isActive == true
-
-    // ── Max altitude alarm ────────────────────────────────────────────────────
-
-    fun startMaxAltitude() {
-        if (maxAltitudeJob?.isActive == true) return
-        if (crossingJob?.isActive == true) return      // no parallel alarms
         maxAltitudeJob = scope.launch {
             while (isActive) {
                 repeat(3) {
@@ -67,28 +97,37 @@ class AlarmSoundPlayer(private val scope: CoroutineScope) {
                 delay(MAX_ALTITUDE_GAP_MS)
             }
         }
+
     }
-    fun stopMaxAltitude() {
+
+    private fun cancelCrossingJob() {
+        crossingJob?.cancel()
+        crossingJob = null
+        toneGen.stopTone()
+    }
+
+    private fun cancelMaxAltitudeJob() {
         maxAltitudeJob?.cancel()
         maxAltitudeJob = null
         toneGen.stopTone()
     }
 
-    val isMaxAltitudeActive: Boolean get() = maxAltitudeJob?.isActive == true
-
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     fun release() {
-        stopCrossing()
-        stopMaxAltitude()
+        crossingDesired = false
+        maxAltitudeDesired = false
+        cancelCrossingJob()
+        cancelMaxAltitudeJob()
         toneGen.release()
     }
 
     companion object {
-        private const val VOLUME             = 100    // ToneGenerator max
-        private const val BEEP_MS            = 160L   // duration of each beep
-        private const val BEEP_GAP_MS        = 80L    // gap between beeps in a pair
-        private const val PAIR_GAP_MS        = 350L   // gap between pairs (crossing)
-        private const val MAX_ALTITUDE_GAP_MS = 700L  // pause between max altitude triple-beep cycles
+        private const val VOLUME = 100    // ToneGenerator max
+        private const val BEEP_MS = 160L   // duration of each beep
+        private const val BEEP_GAP_MS = 80L    // gap between beeps in a pair
+        private const val PAIR_GAP_MS = 350L   // gap between pairs (crossing)
+        private const val MAX_ALTITUDE_GAP_MS =
+            3000L   // pause between max altitude triple-beep cycles
     }
 }
