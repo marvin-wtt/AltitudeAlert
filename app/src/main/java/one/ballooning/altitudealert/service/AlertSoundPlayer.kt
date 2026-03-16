@@ -1,18 +1,25 @@
 package one.ballooning.altitudealert.service
 
-import android.media.AudioManager
-import android.media.ToneGenerator
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.SoundPool
+import one.ballooning.altitudealert.R
 
-class AlarmSoundPlayer(private val scope: CoroutineScope) {
+class AlarmSoundPlayer(context: Context) {
 
-    private val toneGen = ToneGenerator(AudioManager.STREAM_ALARM, VOLUME)
-    private var crossingJob: Job? = null
-    private var maxAltitudeJob: Job? = null
+    private val soundPool = SoundPool.Builder()
+        .setMaxStreams(2)   // one looping alarm + threshold one-shot may briefly overlap
+        .setAudioAttributes(
+            AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+        ).build()
+
+    private val soundThreshold = soundPool.load(context, R.raw.alarm_threshold, 1)
+    private val soundCrossing = soundPool.load(context, R.raw.alarm_limit, 1)
+    private val soundMaxAltitude = soundPool.load(context, R.raw.alarm_max_altitude, 1)
+
+    private var crossingStreamId = 0
+    private var maxAltitudeStreamId = 0
 
     private var crossingDesired = false
     private var maxAltitudeDesired = false
@@ -20,12 +27,7 @@ class AlarmSoundPlayer(private val scope: CoroutineScope) {
     // ── One-shot ──────────────────────────────────────────────────────────────
 
     fun playThreshold() {
-        scope.launch {
-            repeat(3) {
-                toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, BEEP_MS.toInt())
-                delay(BEEP_MS + BEEP_GAP_MS)
-            }
-        }
+        soundPool.play(soundThreshold, 1f, 1f, 1, 0, 1f)
     }
 
     // ── Intent setters ────────────────────────────────────────────────────────
@@ -54,62 +56,39 @@ class AlarmSoundPlayer(private val scope: CoroutineScope) {
 
     private fun sync() {
         when {
-            crossingDesired -> startCrossingJob()
-            maxAltitudeDesired -> startMaxAltitudeJob();
+            crossingDesired -> {
+                stopMaxAltitudeStream()
+                if (crossingStreamId == 0) {
+                    crossingStreamId = soundPool.play(soundCrossing, 1f, 1f, 1, -1, 1f)
+                }
+            }
+
+            maxAltitudeDesired -> {
+                stopCrossingStream()
+                if (maxAltitudeStreamId == 0) {
+                    maxAltitudeStreamId = soundPool.play(soundMaxAltitude, 1f, 1f, 1, -1, 1f)
+                }
+            }
 
             else -> {
-                cancelCrossingJob()
-                cancelMaxAltitudeJob()
+                stopCrossingStream()
+                stopMaxAltitudeStream()
             }
         }
     }
 
-    private fun startCrossingJob() {
-        cancelMaxAltitudeJob()
-        if (crossingJob?.isActive == true) return
-
-        crossingJob = scope.launch {
-            while (isActive) {
-                repeat(2) {
-                    toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, BEEP_MS.toInt())
-                    delay(BEEP_MS + BEEP_GAP_MS)
-                }
-                delay(PAIR_GAP_MS)
-                repeat(2) {
-                    toneGen.startTone(ToneGenerator.TONE_CDMA_LOW_SS, BEEP_MS.toInt())
-                    delay(BEEP_MS + BEEP_GAP_MS)
-                }
-                delay(PAIR_GAP_MS)
-            }
+    private fun stopCrossingStream() {
+        if (crossingStreamId != 0) {
+            soundPool.stop(crossingStreamId)
+            crossingStreamId = 0
         }
     }
 
-    private fun startMaxAltitudeJob() {
-        cancelCrossingJob()
-        if (maxAltitudeJob?.isActive == true) return;
-
-        maxAltitudeJob = scope.launch {
-            while (isActive) {
-                repeat(3) {
-                    toneGen.startTone(ToneGenerator.TONE_CDMA_HIGH_SS, BEEP_MS.toInt())
-                    delay(BEEP_MS + BEEP_GAP_MS)
-                }
-                delay(MAX_ALTITUDE_GAP_MS)
-            }
+    private fun stopMaxAltitudeStream() {
+        if (maxAltitudeStreamId != 0) {
+            soundPool.stop(maxAltitudeStreamId)
+            maxAltitudeStreamId = 0
         }
-
-    }
-
-    private fun cancelCrossingJob() {
-        crossingJob?.cancel()
-        crossingJob = null
-        toneGen.stopTone()
-    }
-
-    private fun cancelMaxAltitudeJob() {
-        maxAltitudeJob?.cancel()
-        maxAltitudeJob = null
-        toneGen.stopTone()
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -117,17 +96,6 @@ class AlarmSoundPlayer(private val scope: CoroutineScope) {
     fun release() {
         crossingDesired = false
         maxAltitudeDesired = false
-        cancelCrossingJob()
-        cancelMaxAltitudeJob()
-        toneGen.release()
-    }
-
-    companion object {
-        private const val VOLUME = 100    // ToneGenerator max
-        private const val BEEP_MS = 160L   // duration of each beep
-        private const val BEEP_GAP_MS = 80L    // gap between beeps in a pair
-        private const val PAIR_GAP_MS = 350L   // gap between pairs (crossing)
-        private const val MAX_ALTITUDE_GAP_MS =
-            3000L   // pause between max altitude triple-beep cycles
+        soundPool.release()
     }
 }

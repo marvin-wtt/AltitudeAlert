@@ -104,7 +104,7 @@ class MonitorService : Service() {
         super.onCreate()
         val app = application as AltitudeAlertApplication
         notification = MonitorNotification(applicationContext)
-        soundPlayer = AlarmSoundPlayer(scope)
+        soundPlayer = AlarmSoundPlayer(applicationContext)
 
         val monitor = AltitudeMonitor(
             readings = app.altitudeDataSource.readings,
