@@ -82,7 +82,8 @@ class FusedAltitudeDataSource(private val context: Context) : AltitudeDataSource
         val callback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 val loc: Location = result.lastLocation ?: return
-                val altitude = if (loc.hasAltitude()) loc.altitude.toFloat() else null
+                if (!loc.hasAltitude()) return
+                val altitude = loc.altitude.toFloat()
                 val accuracy =
                     if (loc.hasVerticalAccuracy()) loc.verticalAccuracyMeters else null
                 trySend(altitude to accuracy)
@@ -93,7 +94,7 @@ class FusedAltitudeDataSource(private val context: Context) : AltitudeDataSource
     }
 
     companion object {
-        private const val GPS_TIMEOUT_MS = 5_000L
+        private const val GPS_TIMEOUT_MS = 10_000L
         private const val GPS_UPDATE_INTERVAL_MS = 2_000L
     }
 }
