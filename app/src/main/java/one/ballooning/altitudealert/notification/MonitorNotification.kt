@@ -84,7 +84,7 @@ class MonitorNotification(private val context: Context) {
         val altitudeFeet = state.altitudeFeet ?: return null
         val lowerFeet = config.lowerLimitFeet
         val upperFeet = config.upperLimitFeet
-        val thresholdFeet = config.approachThresholdFeet
+        val thresholdFeet = if (config.thresholdAlertEnabled) config.approachThresholdFeet else 0f
 
         // ── Coordinate mapping (mirrors BandIndicator canvas logic) ───────────
         val bandRange = (upperFeet - lowerFeet).coerceAtLeast(1f)
@@ -123,13 +123,13 @@ class MonitorNotification(private val context: Context) {
             if (wLo > 0)
                 add(NotificationCompat.ProgressStyle.Segment(wLo).setColor(outsideArgb))
             // Lower threshold zone
-            if (wLoT > wLo)
+            if (wLoT > wLo && config.thresholdAlertEnabled)
                 add(NotificationCompat.ProgressStyle.Segment(wLoT - wLo).setColor(thresholdArgb))
             // Safe centre
             if (wHiT > wLoT)
                 add(NotificationCompat.ProgressStyle.Segment(wHiT - wLoT).setColor(bandArgb))
             // Upper threshold zone
-            if (wHi > wHiT)
+            if (wHi > wHiT && config.thresholdAlertEnabled)
                 add(NotificationCompat.ProgressStyle.Segment(wHi - wHiT).setColor(thresholdArgb))
             // Outside band — above upper limit
             if (scale > wHi)

@@ -26,14 +26,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -539,11 +537,12 @@ private fun BandAlertCard(uiState: MainUiState, onAction: (MainAction) -> Unit) 
                 val thresholdFeet = remember(uiState.approachThresholdFeet) {
                     uiState.approachThresholdFeet.toFloatOrNull() ?: 200f
                 }
+
                 BandIndicator(
                     altitudeFeet = status.altitudeFeet,
                     lowerFeet = lowerFeet,
                     upperFeet = upperFeet,
-                    thresholdFeet = thresholdFeet,
+                    thresholdFeet = if (uiState.thresholdAlertEnabled) thresholdFeet else 0f,
                     markerColor = statusColor,
                     trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     surfaceColor = MaterialTheme.colorScheme.surface,
