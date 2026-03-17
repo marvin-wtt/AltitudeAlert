@@ -3,7 +3,6 @@ package one.ballooning.altitudealert.ui
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,6 +31,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.focus.onFocusChanged
@@ -347,12 +347,12 @@ private fun MaxAltitudeAlarmStatusRow(uiState: MainUiState, onAction: (MainActio
                 ),
             ) {
                 Icon(
-                    Icons.Default.Warning,
+                    Icons.AutoMirrored.Filled.VolumeOff,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Acknowledge max altitude alarm", fontWeight = FontWeight.SemiBold)
+                Text("Acknowledge alarm", fontWeight = FontWeight.SemiBold)
             }
         }
 
@@ -609,62 +609,64 @@ private fun BandAlertCard(uiState: MainUiState, onAction: (MainAction) -> Unit) 
 // ─── Max altitude card ────────────────────────────────────────────────────────
 
 @Composable
-private fun MaxAltitudeCard(uiState: MainUiState, onAction: (MainAction) -> Unit) {
+private fun MaxAltitudeCard(
+    uiState: MainUiState,
+    onAction: (MainAction) -> Unit,
+) {
     val status = uiState.liveStatus
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("Max altitude", style = MaterialTheme.typography.titleLarge)
+    val maxAltitudeText = status.sessionMaxFeet?.let { "%,d ft".format(it.toInt()) } ?: "–"
+    val timestampText = remember(uiState.sessionMaxTimestampMs) {
+        uiState.sessionMaxTimestampMs?.let { formatUtcTimestamp(it) } ?: "–"
+    }
 
-            // ── Session max value ─────────────────────────────────────────────
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                text = "Max altitude",
+                style = MaterialTheme.typography.titleMedium,
+            )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Icon(
-                        Icons.Default.KeyboardArrowUp, null,
-                        Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        "Max altitude",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = status.sessionMaxFeet
-                            ?.let { "%,d ft".format(it.toInt()) } ?: "–",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    val alarmTimestamp = uiState.sessionMaxTimestampMs
-                    val tsText = if (alarmTimestamp != null) remember(alarmTimestamp) {
-                        val dt = Instant.ofEpochMilli(alarmTimestamp).atOffset(ZoneOffset.UTC)
-                        DateTimeFormatter.ofPattern("HH:mm").format(dt) + " UTC · " +
-                                DateTimeFormatter.ofPattern("dd.MM.yyyy").format(dt)
-                    } else "–"
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowUp,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .padding(8.dp)
+                                .size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                    }
+
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         Text(
-                            "At:",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = maxAltitudeText,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.SemiBold,
                         )
+
                         Text(
-                            tsText,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "Recorded at $timestampText",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -672,10 +674,16 @@ private fun MaxAltitudeCard(uiState: MainUiState, onAction: (MainAction) -> Unit
 
             HorizontalDivider()
 
-            // ── Alarm state ───────────────────────────────────────────────────
             MaxAltitudeAlarmStatusRow(uiState, onAction)
         }
     }
+}
+
+private fun formatUtcTimestamp(timestampMs: Long): String {
+    val dt = Instant.ofEpochMilli(timestampMs).atOffset(ZoneOffset.UTC)
+    val time = DateTimeFormatter.ofPattern("HH:mm").format(dt)
+    val date = DateTimeFormatter.ofPattern("dd.MM.yyyy").format(dt)
+    return "$time UTC · $date"
 }
 
 // ─── Source card ──────────────────────────────────────────────────────────────
