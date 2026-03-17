@@ -7,14 +7,6 @@ import one.ballooning.altitudealert.data.repository.SystemInfoRepository
 import one.ballooning.altitudealert.data.source.AltitudeDataSource
 import one.ballooning.altitudealert.data.source.FusedAltitudeDataSource
 
-/**
- * Task list
- * TODO Update max altitude sound
- * TODO Set QHN to standard for flight levels
- * TODO Update max altitude style
- * TODO Show in UI when altitude max alerts are silenced
- */
-
 class AltitudeAlertApplication : Application() {
 
     val configRepository: ConfigRepository by lazy {

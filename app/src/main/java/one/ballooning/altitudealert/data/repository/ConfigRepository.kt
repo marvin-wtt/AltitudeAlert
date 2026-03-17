@@ -6,5 +6,4 @@ import one.ballooning.altitudealert.data.model.AlertConfig
 interface ConfigRepository {
     val configFlow: Flow<AlertConfig>
     suspend fun save(config: AlertConfig)
-    suspend fun updateQnh(qnhHpa: Float)
 }

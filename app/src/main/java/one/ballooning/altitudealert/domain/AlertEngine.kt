@@ -3,7 +3,7 @@ package one.ballooning.altitudealert.domain
 import one.ballooning.altitudealert.data.model.AlertConfig
 import kotlin.math.abs
 
-class AlertEngine {
+object AlertEngine {
 
     fun evaluate(altitudeFeet: Float?, config: AlertConfig, alertsEnabled: Boolean): AlertResult {
         if (!alertsEnabled || altitudeFeet == null) return AlertResult(null, null)

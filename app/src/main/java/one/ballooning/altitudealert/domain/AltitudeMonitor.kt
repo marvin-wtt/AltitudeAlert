@@ -12,37 +12,24 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.scan
 import kotlin.math.max
 
-// Pure domain class — no Android imports, no DI annotations.
-// Receives its inputs as constructor parameters so it is trivially testable.
 class AltitudeMonitor(
     private val readings: Flow<AltitudeReading>,
     private val config: Flow<AlertConfig>,
     private val alertsEnabled: Flow<Boolean>,
-    private val engine: AlertEngine = AlertEngine(),
 ) {
     fun monitorState(): Flow<MonitorState> =
-        combine(readings, config, alertsEnabled) { reading, cfg, enabled ->
-            Triple(
-                reading,
-                cfg,
-                enabled
-            )
-        }
+        combine(readings, config, alertsEnabled, ::Triple)
             .scan<Triple<AltitudeReading, AlertConfig, Boolean>, MonitorState?>(null) { prev, (reading, cfg, enabled) ->
                 val sourceType = resolvedSource(reading, cfg)
                 val altitudeFeet = deriveAltitudeFeet(reading, sourceType, cfg)
                 MonitorState(
                     altitudeFeet = altitudeFeet,
                     sessionMaxFeet = maxOfNullable(prev?.sessionMaxFeet, altitudeFeet),
-                    flightLevel = deriveFlightLevel(reading, cfg),
-                    alertResult = engine.evaluate(altitudeFeet, cfg, enabled),
+                    flightLevel = reading.pressureHpa?.let { pressureToFlightLevel(it) },
+                    alertResult = AlertEngine.evaluate(altitudeFeet, cfg, enabled),
                     altitudeSource = sourceType,
                     gpsAccuracyStatus = deriveGpsAccuracyStatus(reading, sourceType),
-                    gpsVerticalAccuracyFeet = reading.gpsVerticalAccuracyMetres?.let {
-                        metresToFeet(
-                            it
-                        )
-                    },
+                    gpsVerticalAccuracyFeet = reading.gpsVerticalAccuracyMetres?.let { metresToFeet(it) },
                 )
             }
             .filterNotNull()
@@ -63,13 +50,8 @@ class AltitudeMonitor(
             pressureToAltitudeFeet(reading.pressureHpa!!, cfg.qnhHpa)
 
         AltitudeSourceType.GPS ->
-            // No fallback to barometer — a silent source switch would change the reading
-            // without the user knowing, and could mask a genuine GPS outage.
+            // No fallback to barometer — a silent source switch could mask a genuine GPS outage.
             reading.gpsAltitudeMetres?.let { metresToFeet(it) }
-    }
-
-    private fun deriveFlightLevel(reading: AltitudeReading, cfg: AlertConfig): Int? {
-        return reading.pressureHpa?.let { pressureToFlightLevel(it) }
     }
 
     private fun deriveGpsAccuracyStatus(
@@ -81,7 +63,6 @@ class AltitudeMonitor(
         reading.gpsVerticalAccuracyMetres == null -> GpsAccuracyStatus.GOOD
         metresToFeet(reading.gpsVerticalAccuracyMetres) > GPS_LOW_ACCURACY_THRESHOLD_FEET
             -> GpsAccuracyStatus.LOW
-
         else -> GpsAccuracyStatus.GOOD
     }
 

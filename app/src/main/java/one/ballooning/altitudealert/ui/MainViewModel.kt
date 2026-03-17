@@ -61,7 +61,7 @@ data class MainUiState(
 
     val bandLowerAltitudeFeet: String = AlertConfig.DEFAULT.lowerLimitFeet.toInt().toString(),
     val bandUpperAltitudeFeet: String = AlertConfig.DEFAULT.upperLimitFeet.toInt().toString(),
-    val qnhHpa: String = AlertConfig.DEFAULT.qnhHpa.toInt().toString(),
+    val qnhHpa: String = formatQnh(AlertConfig.DEFAULT.qnhHpa),
 
     val approachThresholdFeet: String = AlertConfig.DEFAULT.approachThresholdFeet.toInt()
         .toString(),
@@ -107,14 +107,10 @@ data class MainUiState(
     val approachThresholdValidation: ValidationResult
         get() = Validators.approachThreshold(approachThresholdFeet)
     val maxAltitudeAlertThresholdValidation: ValidationResult
-        get() = if (maxAltitudeEnabled) Validators.maxAltitudeThreshold(
-            maxAltitudeAlertThresholdFeet
-        )
+        get() = if (maxAltitudeEnabled) Validators.approachThreshold(maxAltitudeAlertThresholdFeet)
         else ValidationResult.Valid
     val maxAltitudeReactivationThresholdValidation: ValidationResult
-        get() = if (maxAltitudeEnabled) Validators.maxAltitudeThreshold(
-            maxAltitudeReactivationThresholdFeet
-        )
+        get() = if (maxAltitudeEnabled) Validators.approachThreshold(maxAltitudeReactivationThresholdFeet)
         else ValidationResult.Valid
     val isConfigValid: Boolean
         get() = listOf(
@@ -365,7 +361,7 @@ class MainViewModel(
             preferredSource = config.preferredSource,
             bandLowerAltitudeFeet = config.lowerLimitFeet.toInt().toString(),
             bandUpperAltitudeFeet = config.upperLimitFeet.toInt().toString(),
-            qnhHpa = config.qnhHpa.toInt().toString(),
+            qnhHpa = formatQnh(config.qnhHpa),
             approachThresholdFeet = config.approachThresholdFeet.toInt().toString(),
             maxAltitudeEnabled = config.maxAltitude.enabled,
             maxAltitudeAlertThresholdFeet = config.maxAltitude.alertThresholdFeet.toInt()
@@ -377,6 +373,9 @@ class MainViewModel(
             vibrateEnabled = config.vibrateEnabled,
         )
 }
+
+private fun formatQnh(hpa: Float): String =
+    if (hpa % 1f == 0f) hpa.toInt().toString() else hpa.toString()
 
 private fun MonitorState.toLiveStatus() = LiveAltitudeStatus(
     altitudeFeet = altitudeFeet,

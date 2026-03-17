@@ -25,15 +25,6 @@ class DataStoreConfigRepository(private val context: Context) : ConfigRepository
         context.dataStore.edit { it[KEY_CONFIG] = Json.encodeToString(config) }
     }
 
-    override suspend fun updateQnh(qnhHpa: Float) {
-        context.dataStore.edit { prefs ->
-            val current = prefs[KEY_CONFIG]
-                ?.let { runCatching { Json.decodeFromString<AlertConfig>(it) }.getOrNull() }
-                ?: AlertConfig()
-            prefs[KEY_CONFIG] = Json.encodeToString(current.copy(qnhHpa = qnhHpa))
-        }
-    }
-
     companion object {
         private val KEY_CONFIG = stringPreferencesKey("alert_config")
     }

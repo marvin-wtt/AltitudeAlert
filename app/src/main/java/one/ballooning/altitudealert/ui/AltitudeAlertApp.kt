@@ -17,7 +17,6 @@ fun AltitudeAlertApp(
     val uiState by viewModel.uiState.collectAsState()
     val safeModifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing)
 
-    // Intercept actions that require Activity-level handling before forwarding to ViewModel
     val onAction: (MainAction) -> Unit = { action ->
         when (action) {
             MainAction.RequestPermissions -> onRequestPermissions()

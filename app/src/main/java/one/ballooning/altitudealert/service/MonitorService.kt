@@ -15,11 +15,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.sample
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import one.ballooning.altitudealert.AltitudeAlertApplication
@@ -118,8 +119,11 @@ class MonitorService : Service() {
         latestConfig = app.configRepository.configFlow
             .stateIn(scope, SharingStarted.Eagerly, AlertConfig())
 
+        val monitorFlow = monitor.monitorState()
+            .shareIn(scope, SharingStarted.Eagerly, replay = 1)
+
         scope.launch {
-            monitor.monitorState()
+            monitorFlow
                 .catch { e -> Log.e(TAG, "Flow error", e) }
                 .collect { state ->
                     val config = latestConfig.value
@@ -132,7 +136,7 @@ class MonitorService : Service() {
         }
 
         scope.launch {
-            monitor.monitorState()
+            monitorFlow
                 .sample(NOTIFICATION_UPDATE_INTERVAL_MS)
                 .catch { e -> Log.e(TAG, "Notification flow error", e) }
                 .collect { state ->
@@ -204,7 +208,7 @@ class MonitorService : Service() {
             currOverall == AlertStatus.APPROACHING && prevOverall == AlertStatus.CLEAR -> {
                 if (config.thresholdAlertEnabled) {
                     if (config.soundEnabled) soundPlayer.playThreshold()
-                    if (config.vibrateEnabled) vibrate(AlertStatus.APPROACHING)
+                    if (config.vibrateEnabled) vibrateApproaching()
                 }
             }
         }
@@ -305,13 +309,8 @@ class MonitorService : Service() {
 
     // ─── Vibration ────────────────────────────────────────────────────────────
 
-    private fun vibrate(status: AlertStatus) {
-        val pattern = when (status) {
-            AlertStatus.CLEAR -> return
-            AlertStatus.APPROACHING -> VIBRATE_SHORT
-            AlertStatus.CROSSED -> return
-        }
-        vibrateWithAlarmPriority(VibrationEffect.createWaveform(pattern, -1))
+    private fun vibrateApproaching() {
+        vibrateWithAlarmPriority(VibrationEffect.createWaveform(VIBRATE_SHORT, -1))
     }
 
     private fun setCrossingVibration(wanted: Boolean) {
