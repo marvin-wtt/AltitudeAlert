@@ -77,7 +77,7 @@ class FusedAltitudeDataSource(private val context: Context) : AltitudeDataSource
     @SuppressLint("MissingPermission")
     private fun gpsFlow(): Flow<Pair<Float?, Float?>> = callbackFlow {
         val client = LocationServices.getFusedLocationProviderClient(context)
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2_000L)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, GPS_UPDATE_INTERVAL_MS)
             .setMinUpdateIntervalMillis(1_000L).build()
         val callback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
@@ -94,5 +94,6 @@ class FusedAltitudeDataSource(private val context: Context) : AltitudeDataSource
 
     companion object {
         private const val GPS_TIMEOUT_MS = 5_000L
+        private const val GPS_UPDATE_INTERVAL_MS = 2_000L
     }
 }
