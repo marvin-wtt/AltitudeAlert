@@ -135,7 +135,7 @@ class MonitorService : Service() {
                 .sample(NOTIFICATION_UPDATE_INTERVAL_MS)
                 .catch { e -> Log.e(TAG, "Notification flow error", e) }
                 .collect { state ->
-                    notification.update(state, latestConfig.value, _crossingMuted.value)
+                    notification.update(state, latestConfig.value, _alertsEnabled.value, _crossingMuted.value)
                 }
         }
     }
