@@ -10,6 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.unit.dp
@@ -21,6 +22,7 @@ fun AdvancedSettingsScreen(
     onAction: (AdvancedAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    BackHandler { onAction(AdvancedAction.NavigateBack) }
     Scaffold(
         modifier = modifier,
         topBar = {
