@@ -5,7 +5,6 @@ import androidx.annotation.DrawableRes
 import one.ballooning.altitudealert.R
 import one.ballooning.altitudealert.data.model.AlertConfig
 import one.ballooning.altitudealert.domain.AlertStatus
-import one.ballooning.altitudealert.domain.AltitudeSourceType
 import one.ballooning.altitudealert.domain.GpsAccuracyStatus
 import one.ballooning.altitudealert.domain.MonitorState
 
@@ -23,8 +22,8 @@ object MonitorStatusFormatter {
         val overallStatus = state.alertResult.overallStatus
         return FormattedStatus(
             title = formatTitle(state, overallStatus, alertsEnabled),
-            body = formatBody(state, config, alertsEnabled),
-            bigText = formatBigText(state, config),
+            body = formatBody(state, config),
+            bigText = formatBigText(state, config, alertsEnabled),
             iconRes = iconRes(overallStatus),
             colorRes = colorRes(overallStatus),
         )
@@ -32,24 +31,33 @@ object MonitorStatusFormatter {
 
     // ── Title: status or alert reason — the first thing a pilot reads ─────────
 
-    private fun formatTitle(state: MonitorState, overallStatus: AlertStatus, alertsEnabled: Boolean): String {
+    private fun formatTitle(
+        state: MonitorState,
+        overallStatus: AlertStatus,
+        alertsEnabled: Boolean
+    ): String {
         if (!alertsEnabled) return "Monitoring disabled"
         if (state.gpsAccuracyStatus == GpsAccuracyStatus.LOST) return "GPS signal lost"
         if (state.altitudeFeet == null) return "Acquiring altitude…"
+
+        val result = state.alertResult
+        val upperStatus = result.upper?.status ?: AlertStatus.CLEAR
+
         return when (overallStatus) {
             AlertStatus.CLEAR -> "Monitoring active"
-            AlertStatus.APPROACHING -> "Approaching limit"
-            AlertStatus.CROSSED -> "Limit exceeded"
+            AlertStatus.CROSSED ->
+                if (upperStatus == AlertStatus.CROSSED) "Above upper limit"
+                else "Below lower limit"
+
+            AlertStatus.APPROACHING ->
+                if (upperStatus == AlertStatus.APPROACHING) "Approaching upper limit"
+                else "Approaching lower limit"
         }
     }
 
     // ── Body: current altitude + band — the two numbers needed at a glance ────
 
-    private fun formatBody(state: MonitorState, config: AlertConfig, alertsEnabled: Boolean): String {
-        if (!alertsEnabled) {
-            if (state.gpsAccuracyStatus == GpsAccuracyStatus.LOST) return "GPS signal lost"
-            return state.altitudeFeet?.let { "%,d ft".format(it.toInt()) } ?: "Acquiring altitude…"
-        }
+    private fun formatBody(state: MonitorState, config: AlertConfig): String {
         val band = "%,d – %,d ft".format(
             config.lowerLimitFeet.toInt(),
             config.upperLimitFeet.toInt(),
@@ -61,21 +69,31 @@ object MonitorStatusFormatter {
 
     // ── BigText: expanded detail shown when no ProgressStyle is available ─────
 
-    private fun formatBigText(state: MonitorState, config: AlertConfig): String = buildString {
-        append(
-            "%,d – %,d ft".format(
-                config.lowerLimitFeet.toInt(),
-                config.upperLimitFeet.toInt(),
+    private fun formatBigText(
+        state: MonitorState,
+        config: AlertConfig,
+        alertsEnabled: Boolean
+    ): String = buildString {
+        if (alertsEnabled) {
+            append(
+                "%,d – %,d ft".format(
+                    config.lowerLimitFeet.toInt(),
+                    config.upperLimitFeet.toInt(),
+                )
             )
-        )
+        }
 
-        state.altitudeFeet?.let { append("\nAltitude: ${formatAltitude(state)}") }
+        state.altitudeFeet?.let {
+            if (isNotEmpty()) append("\n")
+            append("Altitude: ${formatAltitude(state)}")
+        }
 
-        state.alertResult.lower?.takeIf { it.status != AlertStatus.CLEAR }
-            ?.let { append("\nLower: ${limitStatusLine(it.status, it.distanceFeet)}") }
-
-        state.alertResult.upper?.takeIf { it.status != AlertStatus.CLEAR }
-            ?.let { append("\nUpper: ${limitStatusLine(it.status, it.distanceFeet)}") }
+        if (alertsEnabled) {
+            state.alertResult.lower?.takeIf { it.status != AlertStatus.CLEAR }
+                ?.let { append("\nLower limit: ${limitStatusLine(it.status, it.distanceFeet)}") }
+            state.alertResult.upper?.takeIf { it.status != AlertStatus.CLEAR }
+                ?.let { append("\nUpper limit: ${limitStatusLine(it.status, it.distanceFeet)}") }
+        }
     }
 
     private fun formatAltitude(state: MonitorState): String = when {
