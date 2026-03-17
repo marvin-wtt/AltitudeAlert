@@ -32,6 +32,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -633,7 +634,7 @@ private fun MaxAltitudeCard(uiState: MainUiState, onAction: (MainAction) -> Unit
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        "Session max",
+                        "Max altitude",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -703,21 +704,55 @@ private fun SourceCard(uiState: MainUiState, onAction: (MainAction) -> Unit) {
 
             if (uiState.showQnh) {
                 val v = uiState.qnhValidation
-                OutlinedTextField(
-                    value = uiState.qnhHpa,
-                    onValueChange = { s ->
-                        if (s.all { it.isDigit() } && s.length <= 4) onAction(MainAction.UpdateQnh(s))
-                    },
-                    label = { Text("QNH (hPa)") },
-                    singleLine = true,
-                    isError = !v.isValid,
-                    supportingText = v.errorMessage?.let { { Text(it) } },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done,
-                    ),
+
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                )
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    OutlinedTextField(
+                        value = uiState.qnhHpa,
+                        onValueChange = { s ->
+                            val valid = s.all { it.isDigit() || it == '.' } &&
+                                s.count { it == '.' } <= 1 && s.length <= 7
+                            if (valid) onAction(MainAction.UpdateQnh(s))
+                        },
+                        label = { Text("QNH (hPa)") },
+                        singleLine = true,
+                        isError = !v.isValid,
+                        supportingText = v.errorMessage?.let { { Text(it) } },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Decimal,
+                            imeAction = ImeAction.Done,
+                        ),
+                        trailingIcon = {
+                            if (uiState.qnhHpa.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { onAction(MainAction.UpdateQnh("")) }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Clear QNH"
+                                    )
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+
+                    FilledTonalButton(
+                        onClick = { onAction(MainAction.UpdateQnh("1013.25")) },
+                        modifier = Modifier.height(56.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 18.dp),
+                    ) {
+                        Text(
+                            "STD",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
             }
         }
     }
@@ -741,9 +776,8 @@ private fun AltitudeBandCard(uiState: MainUiState, onAction: (MainAction) -> Uni
             val upperV = uiState.bandUpperAltitudeValidation
             OutlinedTextField(
                 value = uiState.bandUpperAltitudeFeet,
-                // Raw value stored as-is while typing; FL conversion happens on focus loss only.
                 onValueChange = { onAction(MainAction.UpdateBandUpperAltitude(it)) },
-                label = { Text("Upper limit") },
+                label = { Text("Upper limit (ft)") },
                 singleLine = true,
                 isError = !upperV.isValid,
                 supportingText = {
@@ -755,6 +789,18 @@ private fun AltitudeBandCard(uiState: MainUiState, onAction: (MainAction) -> Uni
                     keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Done,
                 ),
+                trailingIcon = {
+                    if (uiState.bandUpperAltitudeFeet.isNotEmpty()) {
+                        IconButton(
+                            onClick = { onAction(MainAction.UpdateBandUpperAltitude("")) }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear upper limit"
+                            )
+                        }
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .onFocusChanged { focus ->
@@ -767,7 +813,7 @@ private fun AltitudeBandCard(uiState: MainUiState, onAction: (MainAction) -> Uni
             OutlinedTextField(
                 value = uiState.bandLowerAltitudeFeet,
                 onValueChange = { onAction(MainAction.UpdateBandLowerAltitude(it)) },
-                label = { Text("Lower limit") },
+                label = { Text("Lower limit (ft)") },
                 singleLine = true,
                 isError = !lowerV.isValid,
                 supportingText = {
@@ -779,6 +825,18 @@ private fun AltitudeBandCard(uiState: MainUiState, onAction: (MainAction) -> Uni
                     keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Next,
                 ),
+                trailingIcon = {
+                    if (uiState.bandUpperAltitudeFeet.isNotEmpty()) {
+                        IconButton(
+                            onClick = { onAction(MainAction.UpdateBandLowerAltitude("")) }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear lower limit"
+                            )
+                        }
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .onFocusChanged { focus ->

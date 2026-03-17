@@ -167,7 +167,7 @@ private fun MaxAltitudeAlertCard(uiState: MainUiState, onAction: (AdvancedAction
             Text("Max altitude alert", style = MaterialTheme.typography.titleMedium)
             Text(
                 "Continuous alarm when the balloon nears its maximum altitude. " +
-                        "Alarm fires when within the alert threshold of the session max, " +
+                        "Alarm fires when within the alert threshold of the maximum altitude, " +
                         "and re-arms after descending below the reactivation threshold.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -186,7 +186,7 @@ private fun MaxAltitudeAlertCard(uiState: MainUiState, onAction: (AdvancedAction
                     singleLine = true,
                     isError = !alertV.isValid,
                     supportingText = alertV.errorMessage?.let { { Text(it) } }
-                        ?: { Text("Alarm fires when within this distance of the session max") },
+                        ?: { Text("Alarm fires when within this distance of the maximum altitude") },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number,
                         imeAction = ImeAction.Next,

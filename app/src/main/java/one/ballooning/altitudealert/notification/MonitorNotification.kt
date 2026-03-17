@@ -158,7 +158,7 @@ class MonitorNotification(private val context: Context) {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val body = buildString {
-            if (sessionMaxFeet != null) append("Session max: %,d ft".format(sessionMaxFeet.toInt()))
+            if (sessionMaxFeet != null) append("Max altitude: %,d ft".format(sessionMaxFeet.toInt()))
             append(" · Alert below: %,d ft".format(alertAltitudeFeet.toInt()))
         }
         val nb = NotificationCompat.Builder(context, CHANNEL_MAX_ALTITUDE)
