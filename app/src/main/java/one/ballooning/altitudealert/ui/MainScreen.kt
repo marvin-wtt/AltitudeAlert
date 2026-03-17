@@ -93,7 +93,7 @@ fun MainScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         AltitudeBandCard(uiState, onAction)
-                        SourceCard(uiState, onAction)
+                        if (uiState.hasBarometer) SourceCard(uiState, onAction)
                     }
                 }
             } else {
@@ -108,7 +108,7 @@ fun MainScreen(
                     BandAlertCard(uiState, onAction)
                     if (uiState.maxAltitudeEnabled) MaxAltitudeCard(uiState, onAction)
                     AltitudeBandCard(uiState, onAction)
-                    SourceCard(uiState, onAction)
+                    if (uiState.hasBarometer) SourceCard(uiState, onAction)
                 }
             }
         }
@@ -688,19 +688,17 @@ private fun SourceCard(uiState: MainUiState, onAction: (MainAction) -> Unit) {
         ) {
             Text("Source", style = MaterialTheme.typography.titleLarge)
 
-            if (uiState.hasBarometer) {
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    SegmentedButton(
-                        selected = uiState.preferredSource == PreferredSource.BAROMETER,
-                        onClick = { onAction(MainAction.SetPreferredSource(PreferredSource.BAROMETER)) },
-                        shape = SegmentedButtonDefaults.itemShape(0, 2),
-                    ) { Text("Barometer") }
-                    SegmentedButton(
-                        selected = uiState.preferredSource == PreferredSource.GPS,
-                        onClick = { onAction(MainAction.SetPreferredSource(PreferredSource.GPS)) },
-                        shape = SegmentedButtonDefaults.itemShape(1, 2),
-                    ) { Text("GPS") }
-                }
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                SegmentedButton(
+                    selected = uiState.preferredSource == PreferredSource.BAROMETER,
+                    onClick = { onAction(MainAction.SetPreferredSource(PreferredSource.BAROMETER)) },
+                    shape = SegmentedButtonDefaults.itemShape(0, 2),
+                ) { Text("Barometer") }
+                SegmentedButton(
+                    selected = uiState.preferredSource == PreferredSource.GPS,
+                    onClick = { onAction(MainAction.SetPreferredSource(PreferredSource.GPS)) },
+                    shape = SegmentedButtonDefaults.itemShape(1, 2),
+                ) { Text("GPS") }
             }
 
             if (uiState.showQnh) {

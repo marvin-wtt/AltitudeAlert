@@ -28,7 +28,7 @@ class MonitorNotification(private val context: Context) {
 
     fun buildInitial(): Notification =
         builder(CHANNEL_LIVE)
-            .setSmallIcon(R.drawable.ic_notification_clear)
+            .setSmallIcon(R.drawable.ic_check_circle)
             .setContentTitle("Acquiring altitude…")
             .build()
 
@@ -70,7 +70,7 @@ class MonitorNotification(private val context: Context) {
                 },
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
-            nb.addAction(R.drawable.ic_notification_clear, "Mute alarm", muteIntent)
+            nb.addAction(R.drawable.ic_notification_audio_off, "Mute alarm", muteIntent)
         }
 
         manager.notify(NOTIFICATION_ID_LIVE, nb.build())
@@ -162,7 +162,7 @@ class MonitorNotification(private val context: Context) {
             append(" · Alert below: %,d ft".format(alertAltitudeFeet.toInt()))
         }
         val nb = NotificationCompat.Builder(context, CHANNEL_MAX_ALTITUDE)
-            .setSmallIcon(R.drawable.ic_notification_warning)
+            .setSmallIcon(R.drawable.ic_notifications)
             .setContentTitle("Maximum altitude alert")
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -172,7 +172,7 @@ class MonitorNotification(private val context: Context) {
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(tapIntent())
-            .addAction(R.drawable.ic_notification_clear, "Acknowledge", ackIntent)
+            .addAction(R.drawable.ic_notification_audio_off, "Acknowledge", ackIntent)
         manager.notify(NOTIFICATION_ID_MAX_ALTITUDE, nb.build())
     }
 
@@ -184,7 +184,7 @@ class MonitorNotification(private val context: Context) {
 
     fun postGpsLostNotification() {
         val notification = NotificationCompat.Builder(context, CHANNEL_GPS_LOST)
-            .setSmallIcon(R.drawable.ic_notification_warning)
+            .setSmallIcon(R.drawable.ic_location_disabled)
             .setContentTitle("GPS signal lost")
             .setContentText("Altitude unavailable — band alerts are paused.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)

@@ -24,7 +24,7 @@ object MonitorStatusFormatter {
             title = formatTitle(state, overallStatus, alertsEnabled),
             body = formatBody(state, config),
             bigText = formatBigText(state, config, alertsEnabled),
-            iconRes = iconRes(overallStatus),
+            iconRes = iconRes(overallStatus, alertsEnabled),
             colorRes = colorRes(overallStatus),
         )
     }
@@ -109,10 +109,14 @@ object MonitorStatusFormatter {
     }
 
     @DrawableRes
-    private fun iconRes(status: AlertStatus): Int = when (status) {
-        AlertStatus.CLEAR -> R.drawable.ic_notification_clear
-        AlertStatus.APPROACHING -> R.drawable.ic_notification_warning
-        AlertStatus.CROSSED -> R.drawable.ic_notification_alert
+    private fun iconRes(status: AlertStatus, alertsEnabled: Boolean): Int {
+        if (!alertsEnabled) return R.drawable.ic_notifications_off
+
+        return when (status) {
+            AlertStatus.CLEAR -> R.drawable.ic_check_circle
+            AlertStatus.APPROACHING -> R.drawable.ic_notifications
+            AlertStatus.CROSSED -> R.drawable.ic_notifications_active
+        }
     }
 
     @ColorRes
