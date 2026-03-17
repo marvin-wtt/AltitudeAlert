@@ -87,6 +87,7 @@ class MonitorService : Service() {
 
     private lateinit var notification: MonitorNotification
     private lateinit var soundPlayer: AlarmSoundPlayer
+    private lateinit var latestConfig: StateFlow<AlertConfig>
 
     private var previousBandResult: AlertResult? = null
     private var previousGpsLost: Boolean = false
@@ -114,7 +115,7 @@ class MonitorService : Service() {
 
         MonitorNotification.createChannels(applicationContext)
 
-        val latestConfig = app.configRepository.configFlow
+        latestConfig = app.configRepository.configFlow
             .stateIn(scope, SharingStarted.Eagerly, AlertConfig())
 
         scope.launch {
@@ -213,6 +214,9 @@ class MonitorService : Service() {
         _crossingMuted.value = true
         soundPlayer.stopCrossing()
         setCrossingVibration(false)
+        _stateFlow.value?.let { state ->
+            notification.update(state, latestConfig.value, _alertsEnabled.value, crossingMuted = true)
+        }
     }
 
     private fun resetCrossingAlarm() {
