@@ -4,12 +4,7 @@ import android.app.Service
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
-import android.os.VibrationAttributes
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import android.util.Log
-import androidx.core.content.getSystemService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -88,17 +83,11 @@ class MonitorService : Service() {
 
     private lateinit var notification: MonitorNotification
     private lateinit var soundPlayer: AlarmSoundPlayer
+    private lateinit var vibrator: AlarmVibrator
     private lateinit var latestConfig: StateFlow<AlertConfig>
 
     private var previousBandResult: AlertResult? = null
     private var previousGpsLost: Boolean = false
-
-    private var crossingVibrationWanted = false
-    private var maxAltitudeVibrationWanted = false
-
-    private val vibrator: Vibrator by lazy {
-       getSystemService<VibratorManager>()!!.defaultVibrator
-    }
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -107,6 +96,7 @@ class MonitorService : Service() {
         val app = application as AltitudeAlertApplication
         notification = MonitorNotification(applicationContext)
         soundPlayer = AlarmSoundPlayer(applicationContext)
+        vibrator = AlarmVibrator(applicationContext)
 
         val monitor = AltitudeMonitor(
             readings = app.altitudeDataSource.readings,
@@ -120,28 +110,25 @@ class MonitorService : Service() {
             .stateIn(scope, SharingStarted.Eagerly, AlertConfig())
 
         val monitorFlow = monitor.monitorState()
+            .catch { e -> Log.e(TAG, "Flow error", e) }
             .shareIn(scope, SharingStarted.Eagerly, replay = 1)
 
         scope.launch {
-            monitorFlow
-                .catch { e -> Log.e(TAG, "Flow error", e) }
-                .collect { state ->
-                    val config = latestConfig.value
-                    _stateFlow.value = state
-                    trackSessionMax(state)
-                    handleBandAlerts(state, config)
-                    handleGpsLost(state)
-                    handleMaxAltitudeAlert(state, config)
-                }
+            monitorFlow.collect { state ->
+                val config = latestConfig.value
+                _stateFlow.value = state
+                trackSessionMax(state)
+                handleBandAlerts(state, config)
+                handleGpsLost(state)
+                handleMaxAltitudeAlert(state, config)
+            }
         }
 
         scope.launch {
-            monitorFlow
-                .sample(NOTIFICATION_UPDATE_INTERVAL_MS)
-                .catch { e -> Log.e(TAG, "Notification flow error", e) }
-                .collect { state ->
-                    notification.update(state, latestConfig.value, _alertsEnabled.value, _crossingMuted.value)
-                }
+            @OptIn(kotlinx.coroutines.FlowPreview::class)
+            monitorFlow.sample(NOTIFICATION_UPDATE_INTERVAL_MS).collect { state ->
+                notification.update(state, latestConfig.value, _alertsEnabled.value, _crossingMuted.value)
+            }
         }
     }
 
@@ -161,6 +148,7 @@ class MonitorService : Service() {
     override fun onDestroy() {
         scope.cancel()
         soundPlayer.release()
+        vibrator.cancel()
         if (!_alertsEnabled.value) notification.cancelLiveNotification()
         super.onDestroy()
     }
@@ -196,19 +184,19 @@ class MonitorService : Service() {
             currOverall == AlertStatus.CROSSED && prevOverall != AlertStatus.CROSSED -> {
                 if (!_crossingMuted.value) {
                     if (config.soundEnabled) soundPlayer.startCrossing()
-                    if (config.vibrateEnabled) setCrossingVibration(true)
+                    if (config.vibrateEnabled) vibrator.startCrossing()
                 }
             }
 
             currOverall != AlertStatus.CROSSED && prevOverall == AlertStatus.CROSSED -> {
                 soundPlayer.stopCrossing()
-                setCrossingVibration(false)
+                vibrator.stopCrossing()
             }
 
             currOverall == AlertStatus.APPROACHING && prevOverall == AlertStatus.CLEAR -> {
                 if (config.thresholdAlertEnabled) {
                     if (config.soundEnabled) soundPlayer.playThreshold()
-                    if (config.vibrateEnabled) vibrateApproaching()
+                    if (config.vibrateEnabled) vibrator.playApproaching()
                 }
             }
         }
@@ -217,7 +205,7 @@ class MonitorService : Service() {
     private fun muteCrossingAlarm() {
         _crossingMuted.value = true
         soundPlayer.stopCrossing()
-        setCrossingVibration(false)
+        vibrator.stopCrossing()
         _stateFlow.value?.let { state ->
             notification.update(state, latestConfig.value, _alertsEnabled.value, crossingMuted = true)
         }
@@ -225,7 +213,7 @@ class MonitorService : Service() {
 
     private fun resetCrossingAlarm() {
         soundPlayer.stopCrossing()
-        setCrossingVibration(false)
+        vibrator.stopCrossing()
         _crossingMuted.value = false
     }
 
@@ -261,15 +249,14 @@ class MonitorService : Service() {
         val alertAltitude = sessionMax - cfg.alertThresholdFeet
         val reactivationAltitude = sessionMax - cfg.reactivationThresholdFeet
 
-        // Lift silence when balloon has descended far enough below the max
+        // Lift silence when balloon has descended far enough below the session max.
         if (_maxAltitudeSilenced.value && !_maxAltitudeAlarmActive.value &&
             currentAlt <= reactivationAltitude
         ) {
             _maxAltitudeSilenced.value = false
         }
 
-        // Trigger alarm when not silenced and altitude reaches the alert altitude
-        // Note: max altitude monitoring intentionally runs regardless of band alert state.
+        // Max altitude monitoring runs regardless of band alert state.
         if (!_maxAltitudeSilenced.value && !_maxAltitudeAlarmActive.value &&
             currentAlt >= alertAltitude
         ) {
@@ -285,7 +272,7 @@ class MonitorService : Service() {
         notification.postMaxAltitudeAlarmNotification(state.sessionMaxFeet, alertAlt)
 
         if (config.soundEnabled) soundPlayer.startMaxAltitude()
-        if (config.vibrateEnabled) setMaxAltitudeVibration(true)
+        if (config.vibrateEnabled) vibrator.startMaxAltitude()
     }
 
     private fun acknowledgeMaxAltitude() {
@@ -294,7 +281,7 @@ class MonitorService : Service() {
         _maxAltitudeSilenced.value = true
 
         soundPlayer.stopMaxAltitude()
-        setMaxAltitudeVibration(false)
+        vibrator.stopMaxAltitude()
 
         notification.cancelMaxAltitudeNotification()
     }
@@ -303,39 +290,8 @@ class MonitorService : Service() {
         if (!_maxAltitudeAlarmActive.value) return
         _maxAltitudeAlarmActive.value = false
         soundPlayer.stopMaxAltitude()
-        setMaxAltitudeVibration(false)
+        vibrator.stopMaxAltitude()
         notification.cancelMaxAltitudeNotification()
-    }
-
-    // ─── Vibration ────────────────────────────────────────────────────────────
-
-    private fun vibrateApproaching() {
-        vibrateWithAlarmPriority(VibrationEffect.createWaveform(VIBRATE_SHORT, -1))
-    }
-
-    private fun setCrossingVibration(wanted: Boolean) {
-        crossingVibrationWanted = wanted
-        syncVibration()
-    }
-
-    private fun setMaxAltitudeVibration(wanted: Boolean) {
-        maxAltitudeVibrationWanted = wanted
-        syncVibration()
-    }
-
-    private fun syncVibration() {
-        if (crossingVibrationWanted || maxAltitudeVibrationWanted) {
-            vibrateWithAlarmPriority(VibrationEffect.createWaveform(VIBRATE_CROSSING_CYCLE, 0))
-        } else {
-            vibrator.cancel()
-        }
-    }
-
-    private fun vibrateWithAlarmPriority(effect: VibrationEffect) {
-        vibrator.vibrate(
-            effect,
-            VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM),
-        )
     }
 
     companion object {
@@ -343,8 +299,6 @@ class MonitorService : Service() {
         const val ACTION_MUTE_CROSSING = "one.ballooning.altitudealert.MUTE_CROSSING"
         const val ACTION_ACKNOWLEDGE_MAX_ALTITUDE =
             "one.ballooning.altitudealert.ACKNOWLEDGE_MAX_ALTITUDE"
-        private val VIBRATE_SHORT = longArrayOf(0, 150, 100, 150)
-        private val VIBRATE_CROSSING_CYCLE = longArrayOf(0, 400, 200, 400, 200, 400)
         private const val NOTIFICATION_UPDATE_INTERVAL_MS = 500L
     }
 }
