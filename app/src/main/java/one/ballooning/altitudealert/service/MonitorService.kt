@@ -85,10 +85,6 @@ class MonitorService : Service() {
     private lateinit var soundPlayer: AlarmSoundPlayer
     private lateinit var vibrator: AlarmVibrator
 
-    // Tracks the last config received from the flow pipeline.
-    // Only written inside combine collectors — never used before the first real DataStore emission.
-    private var currentConfig: AlertConfig = AlertConfig()
-
     private var previousBandResult: AlertResult? = null
     private var previousGpsLost: Boolean = false
 
@@ -115,13 +111,12 @@ class MonitorService : Service() {
 
         // Combine monitorFlow with configFlow so config is always the real persisted value —
         // never a hardcoded default. monitorFlow itself only emits after configFlow has emitted
-        // (via AltitudeMonitor's combine), so currentConfig is guaranteed to be set before
-        // any alert handling runs.
+        // (via AltitudeMonitor's combine), so config is guaranteed to be real before any
+        // alert handling or notification update runs.
         scope.launch {
             combine(monitorFlow, app.configRepository.configFlow) { state, config ->
                 state to config
             }.collect { (state, config) ->
-                currentConfig = config
                 _stateFlow.value = state
                 trackSessionMax(state)
                 handleBandAlerts(state, config)
@@ -132,10 +127,10 @@ class MonitorService : Service() {
 
         scope.launch {
             @OptIn(kotlinx.coroutines.FlowPreview::class)
-            combine(monitorFlow, app.configRepository.configFlow) { state, config ->
-                state to config
-            }.sample(NOTIFICATION_UPDATE_INTERVAL_MS).collect { (state, config) ->
-                notification.update(state, config, _alertsEnabled.value, _crossingMuted.value)
+            combine(monitorFlow, app.configRepository.configFlow, _crossingMuted) { state, config, muted ->
+                Triple(state, config, muted)
+            }.sample(NOTIFICATION_UPDATE_INTERVAL_MS).collect { (state, config, muted) ->
+                notification.update(state, config, _alertsEnabled.value, muted)
             }
         }
     }
@@ -214,9 +209,7 @@ class MonitorService : Service() {
         _crossingMuted.value = true
         soundPlayer.stopCrossing()
         vibrator.stopCrossing()
-        _stateFlow.value?.let { state ->
-            notification.update(state, currentConfig, _alertsEnabled.value, crossingMuted = true)
-        }
+        // Notification updates automatically via the combine collector when _crossingMuted changes.
     }
 
     private fun resetCrossingAlarm() {
