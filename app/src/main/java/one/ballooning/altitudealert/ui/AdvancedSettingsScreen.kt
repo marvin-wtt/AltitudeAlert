@@ -96,7 +96,7 @@ private fun ApproachAlertCard(uiState: MainUiState, onAction: (AdvancedAction) -
         ) {
             Text("Approach alert", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Three beeps when the altitude comes within the threshold distance of a band edge.",
+                "Single alarm when the altitude comes within the threshold distance of a band edge.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -136,7 +136,7 @@ private fun CrossingAlarmCard(uiState: MainUiState, onAction: (AdvancedAction) -
         ) {
             Text("Crossing alarm", style = MaterialTheme.typography.titleMedium)
             Text(
-                "A continuous two-tone alarm sounds when the altitude exceeds the band limit. " +
+                "A continuous alarm sounds when the altitude exceeds the band limit. " +
                         "Mute it from the notification or the main screen. " +
                         "The alarm resets automatically when the altitude returns inside the band.",
                 style = MaterialTheme.typography.bodySmall,

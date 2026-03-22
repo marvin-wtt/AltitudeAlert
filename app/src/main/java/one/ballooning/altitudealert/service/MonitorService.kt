@@ -14,9 +14,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.shareIn
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import one.ballooning.altitudealert.AltitudeAlertApplication
 import one.ballooning.altitudealert.data.model.AlertConfig
@@ -84,7 +84,10 @@ class MonitorService : Service() {
     private lateinit var notification: MonitorNotification
     private lateinit var soundPlayer: AlarmSoundPlayer
     private lateinit var vibrator: AlarmVibrator
-    private lateinit var latestConfig: StateFlow<AlertConfig>
+
+    // Tracks the last config received from the flow pipeline.
+    // Only written inside combine collectors — never used before the first real DataStore emission.
+    private var currentConfig: AlertConfig = AlertConfig()
 
     private var previousBandResult: AlertResult? = null
     private var previousGpsLost: Boolean = false
@@ -106,16 +109,19 @@ class MonitorService : Service() {
 
         MonitorNotification.createChannels(applicationContext)
 
-        latestConfig = app.configRepository.configFlow
-            .stateIn(scope, SharingStarted.Eagerly, AlertConfig())
-
         val monitorFlow = monitor.monitorState()
             .catch { e -> Log.e(TAG, "Flow error", e) }
             .shareIn(scope, SharingStarted.Eagerly, replay = 1)
 
+        // Combine monitorFlow with configFlow so config is always the real persisted value —
+        // never a hardcoded default. monitorFlow itself only emits after configFlow has emitted
+        // (via AltitudeMonitor's combine), so currentConfig is guaranteed to be set before
+        // any alert handling runs.
         scope.launch {
-            monitorFlow.collect { state ->
-                val config = latestConfig.value
+            combine(monitorFlow, app.configRepository.configFlow) { state, config ->
+                state to config
+            }.collect { (state, config) ->
+                currentConfig = config
                 _stateFlow.value = state
                 trackSessionMax(state)
                 handleBandAlerts(state, config)
@@ -126,8 +132,10 @@ class MonitorService : Service() {
 
         scope.launch {
             @OptIn(kotlinx.coroutines.FlowPreview::class)
-            monitorFlow.sample(NOTIFICATION_UPDATE_INTERVAL_MS).collect { state ->
-                notification.update(state, latestConfig.value, _alertsEnabled.value, _crossingMuted.value)
+            combine(monitorFlow, app.configRepository.configFlow) { state, config ->
+                state to config
+            }.sample(NOTIFICATION_UPDATE_INTERVAL_MS).collect { (state, config) ->
+                notification.update(state, config, _alertsEnabled.value, _crossingMuted.value)
             }
         }
     }
@@ -207,7 +215,7 @@ class MonitorService : Service() {
         soundPlayer.stopCrossing()
         vibrator.stopCrossing()
         _stateFlow.value?.let { state ->
-            notification.update(state, latestConfig.value, _alertsEnabled.value, crossingMuted = true)
+            notification.update(state, currentConfig, _alertsEnabled.value, crossingMuted = true)
         }
     }
 
